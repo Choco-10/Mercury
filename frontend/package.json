@@ -4,6 +4,8 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
+    "test": "node scripts/test.mjs",
+    "smoke": "node scripts/smoke.mjs",
     "dev": "vite",
     "build": "vite build",
     "lint": "eslint .",

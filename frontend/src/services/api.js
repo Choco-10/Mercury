@@ -1,11 +1,7 @@
-/**
- * Service adapter — THE switch point between local demo mode and AWS.
- * VITE_API_MODE=local  → deterministic in-browser demo data + local math
- * VITE_API_MODE=aws    → API Gateway HTTP calls (same function signatures)
- *
- * Every API function returns Promises, so the frontend never knows which
- * mode it is in. Switching to AWS = set one env var, no component changes.
+/** Adapter modes: local = browser demo; localhost/aws = same backend HTTP client.
+ * AWS integration, agent implementation and full demo parity remain separately verified work.
  */
+import { createHttpClient } from './http.js'
 import { getDemoDataset } from '../data/demoData.js'
 import {
   forecastSeries,
@@ -15,8 +11,19 @@ import {
   median,
 } from '../../../shared/analytics.js'
 
-export const API_MODE = import.meta.env.VITE_API_MODE || 'local'
-const AWS_BASE = import.meta.env.VITE_API_BASE_URL || ''
+export const API_MODE = import.meta.env?.VITE_API_MODE || 'local'
+const { get: httpGet, post: httpPost } = createHttpClient({
+  mode: API_MODE, baseUrl: import.meta.env?.VITE_API_BASE_URL || '',
+})
+const USE_HTTP = API_MODE !== 'local'
+
+export function uploadCsv(type, csv) {
+  return httpPost('/data/upload', { type, csv })
+}
+
+export function fetchUploadOutcome(uploadId) {
+  return httpGet(`/data/uploads/${encodeURIComponent(uploadId)}`)
+}
 
 function localDelay(ms = 120) {
   return new Promise((r) => setTimeout(r, ms))
@@ -85,7 +92,7 @@ export function simulatePricing(product, salesHistory, scenarioPrices, elasticit
 
 /** GET /api/products */
 export async function fetchProducts() {
-  if (API_MODE === 'aws') return httpGet('/products')
+  if (USE_HTTP) return httpGet('/products')
   await localDelay()
   const ds = getDemoDataset()
   return ds.products
@@ -93,7 +100,7 @@ export async function fetchProducts() {
 
 /** GET /api/products/{id} */
 export async function fetchProduct(productId) {
-  if (API_MODE === 'aws') return httpGet(`/products/${productId}`)
+  if (USE_HTTP) return httpGet(`/products/${productId}`)
   await localDelay()
   const ds = getDemoDataset()
   const product = ds.products.find((p) => p.product_id === productId)
@@ -103,7 +110,7 @@ export async function fetchProduct(productId) {
 
 /** GET /api/products/{id}/sales */
 export async function fetchSalesHistory(productId) {
-  if (API_MODE === 'aws') return httpGet(`/products/${productId}/sales`)
+  if (USE_HTTP) return httpGet(`/products/${productId}/sales`)
   await localDelay()
   const ds = getDemoDataset()
   return ds.sales_history[productId] || []
@@ -111,7 +118,7 @@ export async function fetchSalesHistory(productId) {
 
 /** GET /api/products/{id}/competitors */
 export async function fetchCompetitors(productId) {
-  if (API_MODE === 'aws') return httpGet(`/products/${productId}/competitors`)
+  if (USE_HTTP) return httpGet(`/products/${productId}/competitors`)
   await localDelay()
   const ds = getDemoDataset()
   return latestCompetitors(ds, productId)
@@ -119,11 +126,11 @@ export async function fetchCompetitors(productId) {
 
 /**
  * GET /api/products/{id}/forecast
- * Local mode uses the shared statistical model. In AWS mode this will be
- * replaced by the Lambda → SageMaker path (same response shape).
+ * HTTP modes use the backend statistical baseline. No SageMaker invocation
+ * is enabled by selecting an HTTP adapter.
  */
 export async function fetchForecast(productId) {
-  if (API_MODE === 'aws') return httpGet(`/products/${productId}/forecast`)
+  if (USE_HTTP) return httpGet(`/products/${productId}/forecast`)
   await localDelay(200)
   const ds = getDemoDataset()
   const sales = ds.sales_history[productId] || []
@@ -142,7 +149,7 @@ export async function fetchForecast(productId) {
 
 /** POST /api/products/{id}/simulate-price */
 export async function simulatePrice(productId, scenarioPrices) {
-  if (API_MODE === 'aws')
+  if (USE_HTTP)
     return httpPost(`/products/${productId}/simulate-price`, { scenario_prices: scenarioPrices })
   await localDelay()
   const ds = getDemoDataset()
@@ -156,7 +163,7 @@ export async function simulatePrice(productId, scenarioPrices) {
 
 /** GET /api/products/{id}/analysis — recommendation + metrics bundle */
 export async function fetchAnalysis(productId) {
-  if (API_MODE === 'aws') return httpGet(`/products/${productId}/analysis`)
+  if (USE_HTTP) return httpGet(`/products/${productId}/analysis`)
   await localDelay(250)
   const ds = getDemoDataset()
   const product = ds.products.find((p) => p.product_id === productId)
@@ -198,24 +205,6 @@ export async function fetchAnalysis(productId) {
   }
 }
 
-// =====================================================================
-// AWS-mode HTTP helpers (API Gateway). Unused in local mode.
-// =====================================================================
-async function httpGet(path) {
-  const res = await fetch(`${AWS_BASE}/api${path}`)
-  if (!res.ok) throw new Error(`API error ${res.status}`)
-  return res.json()
-}
-
-async function httpPost(path, body) {
-  const res = await fetch(`${AWS_BASE}/api${path}`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
-  })
-  if (!res.ok) throw new Error(`API error ${res.status}`)
-  return res.json()
-}
 
 /**
  * Deterministic recommendation engine (local mode preview).
@@ -265,10 +254,11 @@ export function buildRecommendation({ competitor_metrics: cm, demand, forecast_s
 /**
  * POST /api/ai/chat — multi-agent grounded analysis.
  * Local mode returns a deterministic synthesis built from real computed
- * metrics (no LLM). AWS mode routes to Bedrock agent system.
+ * metrics (no LLM). HTTP modes currently return a backend placeholder;
+ * Bedrock specialists are not implemented yet.
  */
 export async function askAnalyst(productId, question) {
-  if (API_MODE === 'aws')
+  if (USE_HTTP)
     return httpPost('/ai/chat', { product_id: productId, question })
   await localDelay(600)
   const analysis = await fetchAnalysis(productId)

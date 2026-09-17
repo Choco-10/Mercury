@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
+import { loadCatalogAnalyses } from '../services/views.js'
 import { fetchProducts, fetchAnalysis } from '../services/api.js'
 import { formatINR, formatPct } from '../lib/format.js'
 import { Badge, TrendBadge, Skeleton, LoadingState, ErrorState, EmptyState } from '../components/ui.jsx'
@@ -7,6 +8,8 @@ import { Badge, TrendBadge, Skeleton, LoadingState, ErrorState, EmptyState } fro
 export default function Products() {
   const [products, setProducts] = useState(null)
   const [analyses, setAnalyses] = useState({})
+  const [analysisErrors, setAnalysisErrors] = useState({})
+  const [analysisDone, setAnalysisDone] = useState(false)
   const [error, setError] = useState(null)
   const [filter, setFilter] = useState('all')
 
@@ -17,11 +20,12 @@ export default function Products() {
         const list = await fetchProducts()
         if (cancelled) return
         setProducts(list)
-        const results = {}
-        for (const p of list) {
-          results[p.product_id] = await fetchAnalysis(p.product_id)
+        const results = await loadCatalogAnalyses(list, fetchAnalysis)
+        if (!cancelled) {
+          setAnalyses(results.analyses)
+          setAnalysisErrors(results.errors)
+          setAnalysisDone(true)
         }
-        if (!cancelled) setAnalyses(results)
       } catch (e) {
         if (!cancelled) setError(e.message)
       }
@@ -67,10 +71,11 @@ export default function Products() {
         </div>
       </header>
 
+      {Object.keys(analysisErrors).length > 0 && <p role="status" className="text-sm text-amber-700">Some products have unavailable analysis; they are not classified as healthy. Open a product for details.</p>}
       {filtered.length === 0 ? (
         <EmptyState
           title="No products match this filter"
-          message="Try switching back to All, or check back after the next scheduled analysis run."
+          message="Try All, inspect uploaded data, or reload to retry analysis. Scheduled analysis is not enabled."
         />
       ) : (
         <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-x-auto thin-scroll">
@@ -103,28 +108,28 @@ export default function Products() {
                     </td>
                     <td className="px-3 py-3">★ {p.rating}</td>
                     <td className="px-3 py-3">
-                      {a ? <TrendBadge direction={a.demand.trend} changePct={a.demand.change_pct} /> : <Skeleton className="h-5 w-24" />}
+                      {a ? <TrendBadge direction={a.demand.trend} changePct={a.demand.change_pct} /> : analysisDone ? <span>Unavailable</span> : <Skeleton className="h-5 w-24" />}
                     </td>
                     <td className="px-3 py-3">
                       {a ? (
                         <Badge tone={a.forecast_summary.delta_vs_recent_pct >= 0 ? 'good' : 'warn'}>
                           {a.forecast_summary.delta_vs_recent_pct >= 0 ? '↑' : '↓'} {formatPct(a.forecast_summary.delta_vs_recent_pct)}
                         </Badge>
-                      ) : <Skeleton className="h-5 w-16" />}
+                      ) : analysisDone ? <span>Unavailable</span> : <Skeleton className="h-5 w-16" />}
                     </td>
                     <td className="px-3 py-3">
                       {a ? (
                         <Badge tone={a.competitor_metrics.seller_vs_median_pct > 3 ? 'warn' : 'neutral'}>
                           {formatPct(a.competitor_metrics.seller_vs_median_pct)}
                         </Badge>
-                      ) : <Skeleton className="h-5 w-16" />}
+                      ) : analysisDone ? <span>Unavailable</span> : <Skeleton className="h-5 w-16" />}
                     </td>
                     <td className="px-3 py-3">
                       {a ? (
                         <Badge tone={a.recommendation.status === 'attention' ? 'warn' : 'good'}>
                           {a.recommendation.status === 'attention' ? '⚠ attention' : '✓ healthy'}
                         </Badge>
-                      ) : <Skeleton className="h-5 w-20" />}
+                      ) : analysisDone ? <span title={analysisErrors[p.product_id]}>Unavailable</span> : <Skeleton className="h-5 w-20" />}
                     </td>
                   </tr>
                 )

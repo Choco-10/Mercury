@@ -1,0 +1,125 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: Mercury - Amazon Seller Intelligence backend
+
+Resources:
+  HttpApi:
+    Type: AWS::Serverless::HttpApi
+    Properties:
+      StageName: prod
+      CorsConfiguration:
+        AllowOrigins: ['*']
+        AllowHeaders: ['*']
+        AllowMethods: ['*']
+
+  DataTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: PK
+          AttributeType: S
+        - AttributeName: SK
+          AttributeType: S
+      KeySchema:
+        - AttributeName: PK
+          KeyType: HASH
+        - AttributeName: SK
+          KeyType: RANGE
+
+  DataBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      VersioningConfiguration:
+        Status: Enabled
+
+  ApiFunction:
+    Type: AWS::Serverless::Function
+    Metadata:
+      BuildProperties:
+        UseNpmCi: true
+    Properties:
+      Handler: handlers/api.handler
+      CodeUri: ../backend/src
+      Runtime: nodejs22.x
+      Timeout: 30
+      MemorySize: 512
+      Environment:
+        Variables:
+          TABLE_NAME: !Ref DataTable
+          BUCKET_NAME: !Ref DataBucket
+      Policies:
+        - Version: '2012-10-17'
+          Statement:
+            - Effect: Allow
+              Action:
+                - dynamodb:Query
+                - dynamodb:GetItem
+                - dynamodb:PutItem
+                - dynamodb:BatchWriteItem
+              Resource: !GetAtt DataTable.Arn
+            - Effect: Allow
+              Action:
+                - s3:GetObject
+                - s3:PutObject
+                - s3:ListBucket
+              Resource:
+                - !GetAtt DataBucket.Arn
+                - !Sub '${DataBucket.Arn}/*'
+      Events:
+        GetProducts:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /api/products
+            Method: GET
+        GetProduct:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /api/products/{id}
+            Method: GET
+        GetProductSub:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /api/products/{id}/{sub}
+            Method: GET
+        PostSimulate:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /api/products/{id}/simulate-price
+            Method: POST
+        PostAnalyze:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /api/products/{id}/analyze
+            Method: POST
+        PostChat:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /api/ai/chat
+            Method: POST
+        GetUploadOutcome:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /api/data/uploads/{uploadId}
+            Method: GET
+        PostUpload:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /api/data/upload
+            Method: POST
+
+Outputs:
+  ApiUrl:
+    Value: !Sub 'https://${HttpApi}.execute-api.${AWS::Region}.amazonaws.com/prod'
+  TableName:
+    Value: !Ref DataTable
+  BucketName:
+    Value: !Ref DataBucket

@@ -4,12 +4,20 @@ import {
   ResponsiveContainer, ComposedChart, LineChart, Line, Area, XAxis, YAxis,
   CartesianGrid, Tooltip, Legend, BarChart, Bar,
 } from 'recharts'
-import { fetchProduct, fetchSalesHistory, fetchCompetitors, fetchForecast, fetchAnalysis, simulatePrice } from '../services/api.js'
+import * as api from '../services/api.js'
+import { loadProductView } from '../services/views.js'
+const { simulatePrice } = api
 import { formatINR, formatPct, formatDate } from '../lib/format.js'
 import { Card, Badge, TrendBadge, LoadingState, ErrorState } from '../components/ui.jsx'
 
 export default function ProductDetail() {
   const { id } = useParams()
+  return <ProductView key={id} id={id} />
+}
+
+function ProductView({ id }) {
+  const [retry, setRetry] = useState(0)
+  const [simError, setSimError] = useState('')
   const [state, setState] = useState({ status: 'loading' })
   const [scenario, setScenario] = useState(null)
   const [simLoading, setSimLoading] = useState(false)
@@ -18,39 +26,36 @@ export default function ProductDetail() {
     let cancelled = false
     ;(async () => {
       try {
-        const [product, sales, competitors, forecast, analysis] = await Promise.all([
-          fetchProduct(id),
-          fetchSalesHistory(id),
-          fetchCompetitors(id),
-          fetchForecast(id).catch(() => null), // forecast failure must not kill the page
-          fetchAnalysis(id),
-        ])
-        if (!cancelled) setState({ status: 'ready', product, sales, competitors, forecast, analysis })
+        const view = await loadProductView(api, id)
+        if (!cancelled) setState({ status: 'ready', ...view })
       } catch (e) {
         if (!cancelled) setState({ status: 'error', message: e.message })
       }
     })()
     return () => { cancelled = true }
-  }, [id])
+  }, [id, retry])
 
   async function runSimulation() {
     setSimLoading(true)
+    setSimError('')
+    setScenario(null)
     try {
       const p = state.product.price
       const result = await simulatePrice(id, [p - 100, p - 50, p, p + 50, p + 100])
       setScenario(result)
+    } catch (err) {
+      setSimError(err.message)
     } finally {
       setSimLoading(false)
     }
   }
 
   if (state.status === 'loading') return <div className="p-8"><LoadingState label="Loading product analytics…" /></div>
-  if (state.status === 'error') return <div className="p-8"><ErrorState message={state.message} onRetry={() => setState({ status: 'loading' })} /></div>
+  if (state.status === 'error') return <div className="p-8"><ErrorState message={state.message} onRetry={() => { setState({ status: 'loading' }); setRetry((n) => n + 1) }} /></div>
 
-  const { product, sales, competitors, forecast, analysis } = state
-  const metrics = analysis.competitor_metrics
-  const rec = analysis.recommendation
-  // __CHARTDATA__
+  const { product, sales, competitors, forecast, analysis, errors } = state
+  const metrics = analysis?.competitor_metrics
+  const rec = analysis?.recommendation
 
   const salesChartData = sales.map((s) => ({
     date: formatDate(s.date),
@@ -77,16 +82,20 @@ export default function ProductDetail() {
             <span className="text-lg font-semibold">{formatINR(product.price)}</span>
             <span className="text-sm text-slate-500">★ {product.rating}</span>
             {product.discount > 0 && <Badge tone="info">{product.discount}% off</Badge>}
-            {rec.status === 'attention' ? <Badge tone="warn">⚠ needs attention</Badge> : <Badge tone="good">✓ healthy</Badge>}
+            {!rec ? <Badge>analysis unavailable</Badge> : rec.status === 'attention' ? <Badge tone="warn">⚠ needs attention</Badge> : <Badge tone="good">✓ healthy</Badge>}
           </div>
         </div>
         <div className="text-right text-xs text-slate-400">
-          Analysis generated {new Date(analysis.generated_at).toLocaleString('en-IN')}
+          {analysis ? `Analysis generated ${new Date(analysis.generated_at).toLocaleString('en-IN')}` : 'No analysis available'}
         </div>
       </div>
 
+      {Object.keys(errors).length > 0 && <Card title="Some data is unavailable">
+        <ul className="text-sm text-amber-700">{Object.entries(errors).map(([name, message]) => <li key={name}>{name}: {message}</li>)}</ul>
+        <button className="text-sm text-indigo-600 underline mt-2" onClick={() => { setState({ status: 'loading' }); setRetry((n) => n + 1) }}>Reload data</button>
+      </Card>}
       {/* Summary tiles */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+      {analysis && <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         <div className="bg-white rounded-xl border border-slate-200 p-5">
           <div className="text-xs uppercase text-slate-500 font-medium">Demand trend</div>
           <div className="mt-2"><TrendBadge direction={analysis.demand.trend} changePct={analysis.demand.change_pct} /></div>
@@ -111,9 +120,10 @@ export default function ProductDetail() {
           <div className="text-2xl font-semibold mt-1">{formatINR(analysis.forecast_summary.total_expected_14d * product.price)}</div>
           <div className="text-xs text-slate-400 mt-1">forecast × current price (estimate)</div>
         </div>
-      </div>
+      </div>}
       {/* Demand chart */}
       <Card title="Demand trend" subtitle="Units sold — last 30 days with price overlay">
+        {sales.length === 0 && <p className="text-sm text-amber-700">No sales history available.</p>}
         <ResponsiveContainer width="100%" height={260}>
           <ComposedChart data={last30}>
             <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
@@ -206,13 +216,14 @@ export default function ProductDetail() {
             </tbody>
           </table>
         </div>
-        <div className="mt-3 flex flex-wrap gap-4 text-xs text-slate-500">
+        {competitors.length === 0 && <p className="text-sm text-amber-700">No competitor observations available.</p>}
+        {metrics && <div className="mt-3 flex flex-wrap gap-4 text-xs text-slate-500">
           <span>Min {formatINR(metrics.competitor_min_price)}</span>
           <span>Median {formatINR(metrics.competitor_median_price)}</span>
           <span>Avg {formatINR(metrics.competitor_avg_price)}</span>
           <span>Max {formatINR(metrics.competitor_max_price)}</span>
           <span className="font-medium">Position: {metrics.seller_position.replace('_', ' ')}</span>
-        </div>
+        </div>}
       </Card>
       {/* Pricing simulator */}
       <Card
@@ -228,6 +239,7 @@ export default function ProductDetail() {
           </button>
         }
       >
+        {simError && <p role="alert" className="text-sm text-rose-700">{simError}</p>}
         {!scenario && !simLoading && (
           <p className="text-sm text-slate-500 py-4">
             Run the simulator to compare price points ±₹100 around your current price. Estimates use recent demand and a fixed elasticity assumption — actual results may differ.
@@ -283,7 +295,7 @@ export default function ProductDetail() {
       </Card>
 
       {/* Recommendation / AI insights */}
-      <Card title="Why this status?" subtitle="Evidence behind the current recommendation">
+      {rec && <Card title="Why this status?" subtitle="Evidence behind the current recommendation">
         <div className="space-y-2">
           {rec.status === 'attention' && (
             <Badge tone="warn">Suggested action: {rec.suggested_action.replace('_', ' ')}{rec.candidate_price ? ` — consider testing ${formatINR(rec.candidate_price)}` : ''}</Badge>
@@ -293,7 +305,7 @@ export default function ProductDetail() {
           </ul>
           <p className="text-xs text-slate-400 pt-1">Confidence: {rec.confidence}. Based on deterministic analysis of your data — verify with your own judgment before acting.</p>
         </div>
-      </Card>
+      </Card>}
     </div>
   )
 }

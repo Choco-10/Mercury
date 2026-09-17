@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
+import { loadCatalogAnalyses, catalogSummary } from '../services/views.js'
 import { fetchProducts, fetchAnalysis } from '../services/api.js'
 import { formatINR, formatPct, formatCompactINR } from '../lib/format.js'
 import { Card, StatTile, Badge, TrendBadge, Skeleton, LoadingState, ErrorState } from '../components/ui.jsx'
@@ -7,6 +8,8 @@ import { Card, StatTile, Badge, TrendBadge, Skeleton, LoadingState, ErrorState }
 export default function Dashboard() {
   const [products, setProducts] = useState(null)
   const [analyses, setAnalyses] = useState({})
+  const [analysisErrors, setAnalysisErrors] = useState({})
+  const [analysisDone, setAnalysisDone] = useState(false)
   const [error, setError] = useState(null)
 
   useEffect(() => {
@@ -16,11 +19,12 @@ export default function Dashboard() {
         const list = await fetchProducts()
         if (cancelled) return
         setProducts(list)
-        const results = {}
-        for (const p of list) {
-          results[p.product_id] = await fetchAnalysis(p.product_id)
+        const results = await loadCatalogAnalyses(list, fetchAnalysis)
+        if (!cancelled) {
+          setAnalyses(results.analyses)
+          setAnalysisErrors(results.errors)
+          setAnalysisDone(true)
         }
-        if (!cancelled) setAnalyses(results)
       } catch (e) {
         if (!cancelled) setError(e.message)
       }
@@ -40,15 +44,7 @@ export default function Dashboard() {
     )
   }
   const analysesList = products.map((p) => analyses[p.product_id]).filter(Boolean)
-  const attentionCount = analysesList.filter((a) => a.recommendation.status === 'attention').length
-  const avgCompetitorPrice = analysesList.length
-    ? Math.round(analysesList.reduce((s, a) => s + a.competitor_metrics.competitor_median_price, 0) / analysesList.length)
-    : null
-  const totalRevenue14d = analysesList.reduce(
-    (s, a) => s + a.forecast_summary.total_expected_14d * a.competitor_metrics.seller_price,
-    0
-  )
-  const latestTs = analysesList.reduce((max, a) => (a.generated_at > max ? a.generated_at : max), '')
+  const { attention: attentionCount, median: avgCompetitorPrice, revenue: totalRevenue14d, latest: latestTs } = catalogSummary(products, analyses)
 
   return (
     <div className="p-8 max-w-7xl mx-auto space-y-6">
@@ -59,18 +55,20 @@ export default function Dashboard() {
         </p>
       </header>
 
+      {analysisDone && <p className="text-sm text-slate-600">Analysis available for {analysesList.length} of {products.length} products. Summary values cover only available analyses.</p>}
+      {Object.keys(analysisErrors).length > 0 && <p role="status" className="text-sm text-amber-700">Some analyses are unavailable. Open the affected product for details or reload to retry.</p>}
       <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
         <StatTile label="Products monitored" value={products.length} />
         <StatTile
           label="Need attention"
-          value={analysesList.length ? attentionCount : '…'}
+          value={analysesList.length ? attentionCount : analysisDone ? '—' : '…'}
           tone={attentionCount > 0 ? 'warn' : 'good'}
-          hint={analysesList.length ? `${attentionCount} of ${products.length} flagged` : undefined}
+          hint={analysesList.length ? `${attentionCount} of ${analysesList.length} analyzed flagged` : undefined}
         />
-        <StatTile label="Avg competitor median price" value={avgCompetitorPrice ? formatINR(avgCompetitorPrice) : '…'} />
+        <StatTile label="Avg competitor median price" value={avgCompetitorPrice != null ? formatINR(avgCompetitorPrice) : analysisDone ? '—' : '…'} />
         <StatTile
           label="14-day expected revenue"
-          value={analysesList.length ? formatCompactINR(totalRevenue14d) : '…'}
+          value={analysesList.length ? formatCompactINR(totalRevenue14d) : analysisDone ? '—' : '…'}
           hint="forecast × price (estimate)"
         />
         <StatTile
@@ -109,7 +107,7 @@ export default function Dashboard() {
                 <div className="mt-3 space-y-1.5 text-xs text-slate-600">
                   <div className="flex items-center justify-between">
                     <span>Demand trend</span>
-                    {a ? <TrendBadge direction={a.demand.trend} changePct={a.demand.change_pct} /> : <Skeleton className="h-4 w-20" />}
+                    {a ? <TrendBadge direction={a.demand.trend} changePct={a.demand.change_pct} /> : analysisDone ? <span>Unavailable</span> : <Skeleton className="h-4 w-20" />}
                   </div>
                   <div className="flex items-center justify-between">
                     <span>14-day forecast</span>
@@ -117,7 +115,7 @@ export default function Dashboard() {
                       <Badge tone={a.forecast_summary.delta_vs_recent_pct >= 0 ? 'good' : 'warn'}>
                         {a.forecast_summary.delta_vs_recent_pct >= 0 ? '↑' : '↓'} {formatPct(a.forecast_summary.delta_vs_recent_pct)}
                       </Badge>
-                    ) : (
+                    ) : analysisDone ? <span>Unavailable</span> : (
                       <Skeleton className="h-4 w-16" />
                     )}
                   </div>
@@ -127,12 +125,12 @@ export default function Dashboard() {
                       <Badge tone={a.competitor_metrics.seller_vs_median_pct > 3 ? 'warn' : 'neutral'}>
                         {formatPct(a.competitor_metrics.seller_vs_median_pct)}
                       </Badge>
-                    ) : (
+                    ) : analysisDone ? <span>Unavailable</span> : (
                       <Skeleton className="h-4 w-16" />
                     )}
                   </div>
                 </div>
-                {!a && <div className="mt-3 text-[11px] text-slate-400">Analysis running…</div>}
+                {!a && <div className="mt-3 text-[11px] text-slate-500">{analysisErrors[p.product_id] || 'Loading analysis…'}</div>}
               </Link>
             )
           })}
