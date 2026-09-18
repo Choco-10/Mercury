@@ -4,3 +4,4 @@ dist/
 .env
 .aws-sam/
 __pycache__/
+aws.md

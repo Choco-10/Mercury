@@ -1,8 +1,8 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { createHandler } from '../src/handlers/api.mjs'
-import { createAnalysisWriter } from '../src/services/analysis-store.js'
-import { PutCommand } from '@aws-sdk/lib-dynamodb'
+import { createAnalysisWriter, createAnalysisReader } from '../src/services/analysis-store.js'
+import { PutCommand, GetCommand } from '@aws-sdk/lib-dynamodb'
 
 const product = { product_id: 'P001', price: 100 }
 const sales = Array.from({ length: 28 }, (_, i) => ({
@@ -19,10 +19,15 @@ function fixture(overrides = {}) {
     getProduct: async (id) => { calls.push('product'); return id === 'P001' ? product : null },
     getSales: async () => { calls.push('sales'); return sales },
     getCompetitorsLatest: async () => { calls.push('competitors'); return competitors },
+    getAnalysis: async () => { calls.push('read'); return cached ?? null },
     putAnalysis: async (snapshot) => { calls.push('write'); snapshots.push(structuredClone(snapshot)) },
     ...overrides,
   }
-  return { handle: createHandler(store), calls, snapshots }
+  let cached = null
+  // Use a fixed clock so age_days is deterministic regardless of when tests run.
+  const fixedDate = new Date('2026-09-28T00:00:00.000Z')
+  const forecastOptions = { now: () => fixedDate, ...overrides.forecastOptions }
+  return { handle: createHandler(store, { forecastOptions }), calls, snapshots }
 }
 
 function event(overrides = {}) {
@@ -51,25 +56,61 @@ for (const [rawPath, stage] of [
       rawPath, requestContext: { stage, http: { method: 'POST' } },
     })), 200)
     assert.deepEqual(snapshots, [result])
-    assert.deepEqual(calls, ['product', 'sales', 'competitors', 'write'])
+    assert.deepEqual(calls, ['product', 'read', 'sales', 'competitors', 'write'])
     assert.match(result.analysis_id, /^[0-9a-f-]{36}$/)
     assert.equal(new Date(result.generated_at).toISOString(), result.generated_at)
     assert.equal(result.product_id, 'P001')
     assert.deepEqual(result.demand, { trend: 'stable', change_pct: 0, slope_30d: 0 })
     assert.deepEqual(result.forecast_summary, {
-      horizon_days: 14, expected_mean_daily: 10, delta_vs_recent_pct: 0, total_expected_14d: 140,
+      horizon_days: 14,
+      status: 'available',
+      reason: null,
+      model: 'trend+weekly-seasonality (lambda baseline)',
+      model_version: 'baseline-utc-v1',
+      forecast_origin: '2026-09-28',
+      training_cutoff: '2026-09-28',
+      training_summary: {
+        first_date: '2026-09-01',
+        last_date: '2026-09-28',
+        observed_days: 28,
+        span_days: 28,
+        missing_days: 0,
+        age_days: 0,
+      },
+      interval: {
+        method: 'uncalibrated residual normal approximation',
+        nominal_level: 0.8,
+      },
+      warnings: [
+        'observed_sales_not_unconstrained_demand',
+        'forecast_evaluation_not_verified',
+      ],
+      expected_mean_daily: 10,
+      delta_vs_recent_pct: 0,
+      total_expected_14d: 140,
     })
     assert.equal(result.competitor_metrics.competitor_median_price, 100)
     assert.equal(result.recommendation.suggested_action, 'monitor')
   })
 }
 
+test('same-day repeat request returns the stored snapshot without recomputing', async () => {
+  const cached = { product_id: 'P001', analysis_id: 'cached-id', demand: { trend: 'stable' } }
+  const { handle, calls, snapshots } = fixture({ getAnalysis: async () => { calls.push('read'); return structuredClone(cached) } })
+  const result = body(await handle(event()), 200)
+  assert.deepEqual(result, cached)
+  assert.deepEqual(calls, ['product', 'read'])
+  assert.deepEqual(snapshots, [])
+})
+
 test('empty object and base64 object accepted', async () => {
   const { handle, snapshots } = fixture()
-  body(await handle(event({ body: '{}' })), 200)
-  body(await handle(event({ body: 'e30=', isBase64Encoded: true })), 200)
+  const first = body(await handle(event({ body: '{}' })), 200)
+  const second = body(await handle(event({ body: 'e30=', isBase64Encoded: true })), 200)
+  // Same-day idempotency: the second POST recompute is stored but both
+  // requests that computed wrote once each — two writes, two distinct ids.
   assert.equal(snapshots.length, 2)
-  assert.notEqual(snapshots[0].analysis_id, snapshots[1].analysis_id)
+  assert.notEqual(first.analysis_id, second.analysis_id)
 })
 
 for (const input of ['{', 'null', '[]', 'true', '1', '"text"', '{"price":5}']) {
@@ -182,7 +223,7 @@ test('response waits for persistence acknowledgement', async () => {
   body(await pending, 200)
 })
 
-test('real writer constructs a conditional snapshot PutCommand offline', async () => {
+test('real writer constructs a date-keyed snapshot PutCommand offline', async () => {
   const snapshot = body(await fixture().handle(event()), 200)
   const commands = []
   const put = createAnalysisWriter({ send: async (command) => { commands.push(command) } }, 'local-test-table')
@@ -193,11 +234,23 @@ test('real writer constructs a conditional snapshot PutCommand offline', async (
     TableName: 'local-test-table',
     Item: {
       PK: 'PRODUCT#P001',
-      SK: `ANALYSIS#${snapshot.generated_at}#${snapshot.analysis_id}`,
+      SK: `ANALYSIS#${snapshot.generated_at.slice(0, 10)}`,
       data: snapshot,
+      updated_at: commands[0].input.Item.updated_at,
     },
-    ConditionExpression: 'attribute_not_exists(PK) AND attribute_not_exists(SK)',
   })
+})
+
+test('real reader fetches the same-day snapshot and returns null when absent', async () => {
+  const commands = []
+  const snapshot = { product_id: 'P001', demand: { trend: 'stable' } }
+  const read = createAnalysisReader({ send: async (command) => { commands.push(command); return { Item: { data: snapshot } } } }, 'local-test-table')
+  assert.deepEqual(await read('P001'), snapshot)
+  const miss = createAnalysisReader({ send: async () => ({}) }, 'local-test-table')
+  assert.equal(await miss('P001'), null)
+  assert.equal(commands.length, 1)
+  assert.ok(commands[0] instanceof GetCommand)
+  assert.equal(commands[0].input.Key.SK, `ANALYSIS#${new Date().toISOString().slice(0, 10)}`)
 })
 
 test('writer propagates transport errors', async () => {

@@ -24,6 +24,24 @@ DynamoDBDocumentClient.prototype.send = async function (command) {
   }
   throw new Error('Unexpected SDK operation')
 }
+// The shared preparer is packaged and importable without repository-relative imports.
+const { prepareDailySeries, addDaysUTC } = await import('./shared/series.js')
+const prepared = prepareDailySeries(Array.from({ length: 28 }, (_, i) => ({
+  date: addDaysUTC('2024-02-01', i), units_sold: 0,
+})))
+assert.equal(prepared.ok, true)
+assert.equal(prepared.series.flags.meetsMinimumHistory, true)
+assert.equal(addDaysUTC(prepared.series.lastDate, 1), '2024-02-29')
+
+
+const { createForecastService } = await import('./shared/forecast-service.js')
+const unavailableForecast = await createForecastService({
+  loadSales: async () => [], provider: { predict: deny },
+  now: () => new Date('2024-03-01T00:00:00Z'),
+}).predict('P001')
+assert.equal(unavailableForecast.reason, 'insufficient_history')
+assert.deepEqual(unavailableForecast.forecast, [])
+
 const { handler } = await import('./handlers/api.mjs')
 const event = (method, path, body) => ({
   version: '2.0', rawPath: `/prod/api${path}`,

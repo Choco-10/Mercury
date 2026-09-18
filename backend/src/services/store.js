@@ -12,7 +12,7 @@ const doc = DynamoDBDocumentClient.from(new DynamoDBClient({ maxAttempts: 3 }))
 
 export const {
   getProducts, getProduct, getSales, getCompetitorsLatest,
-  putProduct, putSales, putCompetitors, putAnalysis,
+  putProduct, putSales, putCompetitors, putAnalysis, getAnalysis,
 } = createStore(doc, process.env.TABLE_NAME)
 
 export const objectStore = createS3ObjectStore(new S3Client({ maxAttempts: 3 }), process.env.BUCKET_NAME)

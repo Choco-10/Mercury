@@ -2,7 +2,8 @@
  * Analysis service — deterministic calculations identical to frontend demo mode.
  * Reuses shared/analytics.js so numbers match across local and AWS modes.
  */
-import { forecastSeries, classifyTrend, linearTrendSlope, mean } from '../shared/analytics.js'
+import { classifyTrend, linearTrendSlope, mean } from '../shared/analytics.js'
+import { predictLocalForecast, summarizeForecast } from '../shared/local-forecast.js'
 
 export function competitorMetrics(product, competitors) {
   const prices = competitors.map((c) => c.price)
@@ -43,29 +44,21 @@ export function simulatePricing(product, salesHistory, scenarioPrices, elasticit
   })
 }
 
-export function buildAnalysis(product, sales, competitors) {
+export async function buildAnalysis(product, sales, competitors, forecastOptions) {
   const metrics = competitorMetrics(product, competitors)
   const units = sales.map((s) => s.units_sold)
   const trend = classifyTrend(units)
   const slope = linearTrendSlope(units.slice(-30))
-  const fc = forecastSeries(sales.map((s) => s.date), units, 14)
-  const fcMean = fc.length ? mean(fc.map((f) => f.expected)) : null
-  const recentMean = mean(units.slice(-14))
-  const fcDeltaPct = fcMean && recentMean ? Math.round(((fcMean - recentMean) / recentMean) * 1000) / 10 : null
-
-  const rec = buildRecommendation(metrics, trend, fcDeltaPct)
+  const forecast = await predictLocalForecast(product.product_id, sales, forecastOptions)
+  const summary = summarizeForecast(forecast, units.slice(-14))
+  const rec = buildRecommendation(metrics, trend, summary.delta_vs_recent_pct)
 
   return {
     product_id: product.product_id,
     generated_at: new Date().toISOString(),
     competitor_metrics: metrics,
     demand: { trend: trend.direction, change_pct: trend.changePct, slope_30d: Math.round(slope * 100) / 100 },
-    forecast_summary: {
-      horizon_days: 14,
-      expected_mean_daily: fcMean != null ? Math.round(fcMean) : null,
-      delta_vs_recent_pct: fcDeltaPct,
-      total_expected_14d: fc.reduce((s, f) => s + f.expected, 0),
-    },
+    forecast_summary: summary,
     recommendation: rec,
   }
 }

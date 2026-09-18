@@ -21,6 +21,7 @@ export function createMemoryStore(dataset) {
     return [...(collection.get(id) || new Map()).entries()]
       .sort(([a], [b]) => compare(a, b)).map(([, row]) => row)
   }
+  const todayKey = () => new Date().toISOString().slice(0, 10)
   return {
     getProducts: async () => structuredClone([...products.values()].sort((a, b) => compare(a.product_id, b.product_id))),
     getProduct: async (id) => structuredClone(products.get(id) ?? null),
@@ -38,9 +39,15 @@ export function createMemoryStore(dataset) {
       return structuredClone([...latest.values()])
     },
     putAnalysis: async (snapshot) => {
-      const key = `${snapshot.product_id}#${snapshot.generated_at}#${snapshot.analysis_id}`
-      if (analyses.has(key)) throw new Error('Analysis snapshot already exists')
-      analyses.set(key, structuredClone(snapshot))
+      // Date-keyed: one snapshot per product per day (same-day requests overwrite).
+      const day = (typeof snapshot?.generated_at === 'string' && /^\d{4}-\d{2}-\d{2}/.test(snapshot.generated_at))
+        ? snapshot.generated_at.slice(0, 10)
+        : new Date().toISOString().slice(0, 10)
+      analyses.set(`${snapshot.product_id}#${day}`, structuredClone(snapshot))
+    },
+    getAnalysis: async (id) => {
+      const cached = analyses.get(`${id}#${todayKey()}`)
+      return cached ? structuredClone(cached) : null
     },
   }
 }

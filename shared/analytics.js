@@ -34,13 +34,13 @@ export function linearTrendSlope(values) {
 
 /**
  * Weekday seasonal factors, normalized to mean 1.
- * Returns array of 7 factors indexed by Date.getDay() (0=Sunday).
+ * Returns array of 7 factors indexed by Date.getUTCDay() (0=Sunday).
  */
 export function weekdayFactors(dates, values) {
   const sums = Array(7).fill(0)
   const counts = Array(7).fill(0)
   dates.forEach((d, i) => {
-    const day = new Date(d).getDay()
+    const day = new Date(d).getUTCDay()
     sums[day] += values[i]
     counts[day] += 1
   })
@@ -73,7 +73,7 @@ export function stdDev(values) {
 
 /**
  * Forecast via linear trend + weekday seasonality, with a normal-approx
- * 80% uncertainty interval derived from residual std dev.
+ * Uncalibrated nominal 80% interval derived from residual std dev; not measured coverage.
  */
 export function forecastSeries(dates, values, horizon = 14) {
   const n = values.length
@@ -88,10 +88,10 @@ export function forecastSeries(dates, values, horizon = 14) {
   const out = []
   for (let h = 1; h <= horizon; h++) {
     const date = new Date(lastDate)
-    date.setDate(lastDate.getDate() + h)
+    date.setUTCDate(lastDate.getUTCDate() + h)
     const idx = n - 1 + h
     const base = intercept + slope * idx
-    const season = factors[date.getDay()] || 1
+    const season = factors[date.getUTCDay()] || 1
     const expected = Math.max(0, base * season)
     const spread = z * sigma
     out.push({

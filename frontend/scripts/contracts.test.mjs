@@ -28,7 +28,9 @@ for (const id of ['P001', 'P002', 'P003', 'P004', 'P005']) {
   })
 }
 
-test('packaged shared analytics matches canonical source byte-for-byte', async () => {
-  assert.equal(await readFile(new URL('../../shared/analytics.js', import.meta.url), 'utf8'),
-    await readFile(new URL('../../backend/src/shared/analytics.js', import.meta.url), 'utf8'))
-})
+for (const name of ['analytics.js', 'series.js', 'forecast-service.js', 'local-forecast.js']) {
+  test(`packaged ${name} matches canonical source byte-for-byte`, async () => {
+    assert.equal(await readFile(new URL(`../../shared/${name}`, import.meta.url), 'utf8'),
+      await readFile(new URL(`../../backend/src/shared/${name}`, import.meta.url), 'utf8'))
+  })
+}

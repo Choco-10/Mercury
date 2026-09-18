@@ -27,10 +27,66 @@ test('pricing sorts history without modifying it', () => {
   assert.deepEqual(rows, before)
 })
 
-test('forecast numerical overflow gives explicit unavailable envelope', () => {
-  // Individually safe inputs can still overflow intermediate arithmetic precision,
-  // but invalid non-finite source values must never be emitted as forecast numbers.
-  const result = forecastResponse('P001', Array.from({ length: 3 }, (_, i) => ({
+const forecastSales = Array.from({ length: 28 }, (_, i) => ({
+  date: `2026-09-${String(i + 1).padStart(2, '0')}`, units_sold: 10,
+}))
+
+for (const [name, rows, reason] of [
+  ['empty', [], 'insufficient_history'],
+  ['short', sales, 'insufficient_history'],
+  ['non-array', null, 'invalid_sales_data'],
+  ['invalid date', [...forecastSales, { date: '2026-02-30', units_sold: 10 }], 'invalid_sales_data'],
+  ['duplicate', [...forecastSales, forecastSales[0]], 'invalid_sales_data'],
+  ['negative', [...forecastSales, { date: '2026-10-01', units_sold: -1 }], 'invalid_sales_data'],
+  ['fractional', [...forecastSales, { date: '2026-10-01', units_sold: 1.5 }], 'invalid_sales_data'],
+  ['unsafe', [...forecastSales, { date: '2026-10-01', units_sold: Number.MAX_SAFE_INTEGER + 1 }], 'invalid_sales_data'],
+  ['non-finite', [...forecastSales, { date: '2026-10-01', units_sold: Infinity }], 'invalid_sales_data'],
+  ['wrong product', [...forecastSales, { date: '2026-10-01', units_sold: 1, product_id: 'OTHER' }], 'invalid_sales_data'],
+]) {
+  test(`forecast diagnostics: ${name}`, async () => {
+    const before = structuredClone(rows)
+    const result = await forecastResponse('P001', rows)
+    assert.equal(result.status, 'unavailable')
+    assert.equal(result.reason, reason)
+    assert.equal(result.model, null)
+    assert.deepEqual(result.forecast, [])
+    assert.equal(result.product_id, 'P001')
+    assert.equal(result.horizon_days, 14)
+    assert.equal(new Date(result.generated_at).toISOString(), result.generated_at)
+    assert.deepEqual(rows, before)
+  })
+}
+
+for (const units of [0, 10]) {
+  test(`successful forecast availability for ${units} daily units`, async () => {
+    const rows = forecastSales.map((row) => ({ ...row, units_sold: units })).reverse()
+    const before = structuredClone(rows)
+    const result = await forecastResponse('P001', rows)
+    assert.equal(result.status, 'available')
+    assert.equal(result.reason, null)
+    assert.equal(result.model, 'trend+weekly-seasonality (lambda baseline)')
+    assert.equal(result.forecast.length, 14)
+    assert.ok(result.forecast.every((row) => row.expected === units))
+    assert.deepEqual(rows, before)
+  })
+}
+
+test('unexpected calculation-path exception has only a controlled public reason', async () => {
+  const rows = [...forecastSales]
+  // Exercise the catch without adding a pretend provider to production code.
+  rows[Symbol.iterator] = () => { throw new Error('Private diagnostic: secret') }
+  const result = await forecastResponse('P001', rows)
+  assert.equal(result.status, 'unavailable')
+  assert.equal(result.reason, 'calculation_failed')
+  assert.equal(result.model, null)
+  assert.deepEqual(result.forecast, [])
+  assert.ok(!JSON.stringify(result).includes('Private diagnostic'))
+})
+
+
+test('non-finite forecast inputs give an unavailable envelope', async () => {
+  // Invalid non-finite source values must never be emitted as forecast numbers.
+  const result = await forecastResponse('P001', Array.from({ length: 3 }, (_, i) => ({
     date: `2026-09-0${i + 1}`, units_sold: Infinity,
   })))
   assert.equal(result.model, null)
@@ -50,7 +106,7 @@ for (const text of [
     const unexpected = async () => { calls++; throw new Error('Unexpected storage access') }
     const handle = createHandler(Object.fromEntries([
       'getProducts', 'getProduct', 'getSales', 'getCompetitorsLatest',
-      'putSales', 'putCompetitors', 'putAnalysis',
+      'putSales', 'putCompetitors', 'putAnalysis', 'getAnalysis',
     ].map((name) => [name, unexpected])))
     const response = await handle({
       version: '2.0', rawPath: '/api/data/upload',

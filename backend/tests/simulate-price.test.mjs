@@ -34,6 +34,7 @@ function fixture(overrides = {}) {
     putSales: unexpected('putSales'),
     putCompetitors: unexpected('putCompetitors'),
     putAnalysis: unexpected('putAnalysis'),
+    getAnalysis: unexpected('getAnalysis'),
     ...overrides,
   }
   return { handle: createHandler(store), calls }

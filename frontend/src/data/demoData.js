@@ -149,7 +149,7 @@ export function generateProductSales(bp, dates) {
     const noiseFactor = 1 + (rnd() * 2 - 1) * noise
     const units = Math.max(0, Math.round(base * priceFactor * slopeFactor * week * event * noiseFactor))
     series.push({
-      date: isoDate(dates[i]) + 'T00:00:00.000Z',
+      date: isoDate(dates[i]),
       units_sold: units,
       price: Math.round(bp.basePrice * priceFactor),
     })
@@ -173,7 +173,7 @@ export function generateCompetitors(bp, dates) {
         price,
         rating: comp.rating,
         discount: comp.discount,
-        observation_date: isoDate(dates[i]) + 'T00:00:00.000Z',
+        observation_date: isoDate(dates[i]),
       })
     }
   }

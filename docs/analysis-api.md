@@ -1,4 +1,4 @@
-# Analysis API — Phase 2 local implementation
+# Analysis API — Phase 6 local implementation
 
 ## POST /api/products/{id}/analyze
 
@@ -7,7 +7,14 @@ properties/body shapes are rejected; clients cannot supply computed numbers.
 Loads the product, sales and latest competitors, computes deterministic analysis,
 then saves a snapshot. Returns 200 only after the write is acknowledged.
 
-The response is the existing GET /analysis object plus `analysis_id` (UUID):
+**Same-day idempotency (on-demand, no scheduler):** analysis runs only when the
+user requests it. Before computing, the route reads the stored snapshot keyed by
+`product_id + analysis_date` (UTC calendar date of `generated_at`). If a
+same-day snapshot exists it is returned as-is — repeated requests on the same
+day return the identical report instead of recomputing. The next calendar day
+computes and overwrites the date key with a fresh snapshot.
+
+The response is the analysis object plus `analysis_id` (UUID):
 `product_id`, `generated_at`, `competitor_metrics`, `demand`,
 `forecast_summary`, `recommendation`, `analysis_id`.
 No Bedrock call, external forecast service, price change or transaction occurs.
@@ -29,20 +36,21 @@ are not filled; regularity/evaluation is a later forecasting concern.
 
 DynamoDB item:
 - PK: `PRODUCT#<product_id>`
-- SK: `ANALYSIS#<generated_at ISO timestamp>#<analysis_id UUID>`
+- SK: `ANALYSIS#<analysis_date YYYY-MM-DD>` (one snapshot per product per day)
 - data: complete returned snapshot
 
-A conditional put prevents overwriting the same snapshot key. Separate POSTs
-create separate snapshots, even for identical inputs. HTTP retry deduplication
-is NOT implemented. A timed-out write can have succeeded remotely, so a 500 is
-not proof that nothing was stored. Retention and retry idempotency remain future
-work before scheduled workflows are enabled.
+The date key makes same-day writes idempotent: a retry or a repeated user
+request overwrites the same key with an equivalent report instead of creating
+duplicates. Analysis is always user-triggered; there is no scheduled trigger,
+EventBridge rule or Step Functions workflow. A timed-out write can have
+succeeded remotely, so a 500 is not proof that nothing was stored — the next
+request returns the stored snapshot.
 
 ## GET /api/products/{id}/analysis
 
 GET computes on demand and does not write or retrieve saved snapshots.
 It does not include analysis_id. No snapshot-list/latest-read endpoint is added.
-GET and POST now share guarded computation: both return 422 for insufficient or
+GET and POST share guarded computation: both return 422 for insufficient or
 invalid source data and a generic 500 for unexpected calculation failures.
 Their successful calculation fields remain identical.
 
@@ -54,7 +62,7 @@ Run in PowerShell:
 node --test "C:\Users\harshiv\Desktop\Mercury\backend\tests\simulate-price.test.mjs" "C:\Users\harshiv\Desktop\Mercury\backend\tests\analyze.test.mjs"
 ```
 
-Router tests use in-memory storage. Writer tests use the actual SDK PutCommand
-with an injected fake send method: no AWS client, credentials or network requests.
-The SDK is currently installed via the backend parent package; deployable-package
-dependency packaging is still pending. Offline tests do not prove AWS integration.
+Router tests use in-memory storage. Writer/reader tests use the actual SDK
+PutCommand/GetCommand with an injected fake send method: no AWS client,
+credentials or network requests.
+Offline tests do not prove AWS integration.

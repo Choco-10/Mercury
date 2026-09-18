@@ -3,10 +3,10 @@
  * Product: PK=SELLER#SELLER001, SK=PRODUCT#<id>
  * Sales: PK=PRODUCT#<id>, SK=SALES#<date>
  * Competitor: PK=PRODUCT#<id>, SK=COMPETITOR#<cid>#<date>
- * Analysis: PK=PRODUCT#<id>, SK=ANALYSIS#<timestamp>#<uuid>
+ * Analysis: PK=PRODUCT#<id>, SK=ANALYSIS#<date> (one snapshot per day)
  */
 import { GetCommand, PutCommand } from '@aws-sdk/lib-dynamodb'
-import { createAnalysisWriter } from './analysis-store.js'
+import { createAnalysisWriter, createAnalysisReader } from './analysis-store.js'
 import { createDynamoIO } from './dynamodb-io.js'
 import { normalizeStoredDate } from './stored-date.js'
 
@@ -87,5 +87,6 @@ export function createStore(client, tableName, options = {}) {
     getProducts, getProduct, getSales, getCompetitorsLatest,
     putProduct, putSales, putCompetitors,
     putAnalysis: createAnalysisWriter(client, tableName),
+    getAnalysis: createAnalysisReader(client, tableName),
   }
 }

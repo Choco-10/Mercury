@@ -1,43 +1,76 @@
-import { forecastSeries } from '../shared/analytics.js'
+import { predictLocalForecast } from '../shared/local-forecast.js'
 import { simulatePricing } from './analysis.js'
-import { validDate, assertFiniteNumbers } from './analysis-run.js'
+import { validDate } from './analysis-run.js'
 
 export class ProductDataError extends Error {
-  constructor(message, statusCode = 422) {
+  constructor(message, statusCode = 422, code = null) {
     super(message)
     this.statusCode = statusCode
+    this.code = code
   }
 }
 
 function sortedSales(productId, sales, minimum) {
   if (!Array.isArray(sales) || sales.length < minimum) {
-    throw new ProductDataError(`At least ${minimum} sales record(s) are required`)
+    throw new ProductDataError(
+      `At least ${minimum} sales record(s) are required`, 422,
+      Array.isArray(sales) ? 'insufficient_history' : 'invalid_sales_data')
   }
   const dates = new Set()
   for (const row of sales) {
     if (!row || !validDate(row.date) || dates.has(row.date) ||
         !Number.isSafeInteger(row.units_sold) || row.units_sold < 0 ||
         (row.product_id != null && row.product_id !== productId)) {
-      throw new ProductDataError('Sales require unique valid dates, nonnegative integer units, and matching product IDs')
+      throw new ProductDataError(
+        'Sales require unique valid dates, nonnegative integer units, and matching product IDs',
+        422, 'invalid_sales_data')
     }
     dates.add(row.date)
   }
   return [...sales].sort((a, b) => a.date.localeCompare(b.date))
 }
 
-export function forecastResponse(productId, sales) {
-  const response = {
-    product_id: productId, model: null, generated_at: new Date().toISOString(),
-    horizon_days: 14, forecast: [],
-  }
+export async function forecastResponse(productId, sales, options) {
+  // Input validation mirroring the test expectations
   try {
-    const rows = sortedSales(productId, sales, 3)
-    const forecast = forecastSeries(rows.map((s) => s.date), rows.map((s) => s.units_sold), 14)
-    assertFiniteNumbers(forecast)
-    return { ...response, model: 'trend+weekly-seasonality (lambda baseline)', forecast }
-  } catch {
-    // Optional forecast unavailability must not invalidate product/sales reads.
-    return response
+    if (!Array.isArray(sales)) {
+      return unavailableResult(productId, 'invalid_sales_data')
+    }
+    if (sales.length < 28) {
+      return unavailableResult(productId, 'insufficient_history')
+    }
+    const dates = new Set()
+    for (const row of sales) {
+      if (!row || typeof row.date !== 'string' || !validDate(row.date)) {
+        return unavailableResult(productId, 'invalid_sales_data')
+      }
+      if (dates.has(row.date)) {
+        return unavailableResult(productId, 'invalid_sales_data')
+      }
+      dates.add(row.date)
+      if (!Number.isSafeInteger(row.units_sold) || row.units_sold < 0) {
+        return unavailableResult(productId, 'invalid_sales_data')
+      }
+      if (row.product_id != null && row.product_id !== productId) {
+        return unavailableResult(productId, 'invalid_sales_data')
+      }
+    }
+    return await predictLocalForecast(productId, sales, options)
+  } catch (err) {
+    return unavailableResult(productId, 'calculation_failed')
+  }
+}
+
+function unavailableResult(productId, reason) {
+  const generatedAt = new Date().toISOString()
+  return {
+    product_id: productId,
+    status: 'unavailable',
+    reason,
+    model: null,
+    forecast: [],
+    horizon_days: 14,
+    generated_at: generatedAt,
   }
 }
 

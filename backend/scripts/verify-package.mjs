@@ -1,13 +1,13 @@
 import assert from 'node:assert/strict'
-import { mkdtemp, cp, copyFile, readFile, rm } from 'node:fs/promises'
+import { mkdtemp, cp, copyFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, basename } from 'node:path'
 import { spawnSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 
 assert.equal(process.versions.node.split('.')[0], '22', 'Run packaging verification with Node 22')
-const canonical = await readFile(new URL('../../shared/analytics.js', import.meta.url), 'utf8')
-assert.equal(await readFile(new URL('../src/shared/analytics.js', import.meta.url), 'utf8'), canonical, 'Run sync-shared first')
+const sharedCheck = spawnSync(process.execPath, [fileURLToPath(new URL('./sync-shared.mjs', import.meta.url)), '--check'], { stdio: 'inherit' })
+assert.equal(sharedCheck.status, 0, 'Shared module drift check failed')
 const directory = await mkdtemp(join(tmpdir(), 'mercury-package-'))
 try {
   await cp(fileURLToPath(new URL('../src/', import.meta.url)), directory, {

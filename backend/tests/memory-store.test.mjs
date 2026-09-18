@@ -34,12 +34,14 @@ test('latest competitor ignores older uploads and replaces same-date observation
   assert.deepEqual(await store.getCompetitorsLatest('UNKNOWN'), [])
 })
 
-test('snapshot keys are create-only and independent server stores do not share changes', async () => {
+test('snapshot keys are date-based for same-day idempotency; server stores stay independent', async () => {
   const a = createMemoryStore(dataset), b = createMemoryStore(dataset)
   const snapshot = { product_id: 'P001', generated_at: 'date', analysis_id: 'id' }
   await a.putAnalysis(snapshot)
-  await assert.rejects(a.putAnalysis(snapshot), /already exists/)
-  await b.putAnalysis(snapshot)
+  // Same-day put overwrites (idempotency by product_id + analysis_date)
+  await a.putAnalysis({ ...snapshot, analysis_id: 'id-2' })
+  assert.equal((await a.getAnalysis('P001')).analysis_id, 'id-2')
+  assert.equal(await b.getAnalysis('P001'), null)
   await a.putProduct({ product_id: 'P001', price: 200 })
   assert.equal((await b.getProducts())[0].price, 100)
 })

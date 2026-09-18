@@ -4,7 +4,7 @@ import { CsvError } from './csv-records.js'
 import { createAnalysisSnapshot, AnalysisDataError } from '../services/analysis-run.js'
 
 // Each invocation owns one UUID; no implicit cloud fallback, resume, or whole-upload retry.
-export function createIngestion({ objectStore, ledger }) {
+export function createIngestion({ objectStore, ledger, forecastOptions }) {
   if (typeof objectStore !== 'function') throw new TypeError('An objectStore dependency is required')
   if (typeof ledger?.putRecordOutcome !== 'function') throw new TypeError('A ledger dependency is required')
 
@@ -79,7 +79,9 @@ export function createIngestion({ objectStore, ledger }) {
           // Base-table strong reads include acknowledged upload writes. Not a cross-query snapshot.
           const sales = await store.getSales(productId)
           const competitors = await store.getCompetitorsLatest(productId)
-          const snapshot = createAnalysisSnapshot(product, sales, competitors)
+          const snapshot = await createAnalysisSnapshot(product, sales, competitors, forecastOptions)
+          outcome.forecast_status = snapshot.forecast_summary.status
+          outcome.forecast_reason = snapshot.forecast_summary.reason
           outcome.analysis_id = snapshot.analysis_id
           outcome.status = 'save_uncertain'
           await checkpoint()

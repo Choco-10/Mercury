@@ -58,14 +58,14 @@ export function validateAnalysisInputs(product, sales, competitors) {
   if (issues.length) throw new AnalysisDataError(issues)
 }
 
-export function computeAnalysis(product, sales, competitors) {
+export async function computeAnalysis(product, sales, competitors, forecastOptions) {
   validateAnalysisInputs(product, sales, competitors)
   const sortedSales = [...sales].sort((a, b) => a.date.localeCompare(b.date))
-  const analysis = buildAnalysis(product, sortedSales, competitors)
+  const analysis = await buildAnalysis(product, sortedSales, competitors, forecastOptions)
   assertFiniteNumbers(analysis)
   return analysis
 }
 
-export function createAnalysisSnapshot(product, sales, competitors) {
-  return { ...computeAnalysis(product, sales, competitors), analysis_id: randomUUID() }
+export async function createAnalysisSnapshot(product, sales, competitors, forecastOptions) {
+  return { ...await computeAnalysis(product, sales, competitors, forecastOptions), analysis_id: randomUUID() }
 }

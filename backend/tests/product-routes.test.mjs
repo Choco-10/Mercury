@@ -19,6 +19,8 @@ function fixture(overrides = {}) {
     putSales: async (pid, rows) => { calls.push('writeSales'); writtenSales.push([pid, rows]) },
     putCompetitors: unused,
     putAnalysis: unused,
+    // POST /analyze checks the same-day snapshot first; no cache by default.
+    getAnalysis: async () => { calls.push('readAnalysis'); return null },
     getProducts: async () => { calls.push('products'); return [product] },
     getProduct: async (id) => { calls.push('product'); return id === 'P001' ? product : null },
     getSales: async () => { calls.push('sales'); return sales },
@@ -110,6 +112,7 @@ test('GET forecast returns 14 ordered days or an explicit empty result', async (
   assert.deepEqual(fallback, {
     product_id: 'P001', model: null, forecast: [],
     horizon_days: 14, generated_at: fallback.generated_at,
+    status: 'unavailable', reason: 'insufficient_history',
   })
   assert.equal(new Date(fallback.generated_at).toISOString(), fallback.generated_at)
 })
@@ -197,6 +200,32 @@ for (const badSales of [
     assert.ok(result.generated_at)
   })
 }
+
+for (const [name, rows, status, reason] of [
+  ['short', sales.slice(0, 2), 'unavailable', 'insufficient_history'],
+  ['duplicate', [...sales, sales[0]], 'unavailable', 'invalid_sales_data'],
+  ['zero', sales.map((row) => ({ ...row, units_sold: 0 })), 'available', null],
+]) {
+  test(`forecast diagnostics survive route JSON: ${name}`, async () => {
+    const { handle } = fixture({ getSales: async () => rows })
+    const result = body(await handle(get('/api/products/P001/forecast')), 200)
+    assert.equal(result.status, status)
+    assert.equal(result.reason, reason)
+    assert.equal(result.forecast.length, status === 'available' ? 14 : 0)
+  })
+}
+
+test('forecast route sanitizes unexpected computation errors', async () => {
+  const rows = [...sales]
+  rows[Symbol.iterator] = () => { throw new Error('Private computation diagnostic') }
+  const { handle } = fixture({ getSales: async () => rows })
+  const result = body(await handle(get('/api/products/P001/forecast')), 200)
+  assert.equal(result.status, 'unavailable')
+  assert.equal(result.reason, 'calculation_failed')
+  assert.deepEqual(result.forecast, [])
+  assert.ok(!JSON.stringify(result).includes('Private computation diagnostic'))
+})
+
 
 test('analysis rejects empty competitors instead of null-serialized infinities', async () => {
   const { handle } = fixture({ getCompetitorsLatest: async () => [] })

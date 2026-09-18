@@ -33,6 +33,7 @@ function fixture({ failLedger = 0, failObject = 0, failSales = false, failAnalys
     getSales: async () => sales,
     getCompetitorsLatest: async () => [{ product_id: 'P001', competitor_id: 'C001', price: 100 }],
     putAnalysis: async (snapshot) => { if (failAnalysis) throw new Error('Private snapshot failure'); snapshots.push(snapshot) },
+    getAnalysis: async () => null,
   }
   return { store, objects, checkpoints, sales, snapshots, ledger, objectStore,
     run: () => createIngestion({ objectStore, ledger })(store, 'sales', csv) }
@@ -48,9 +49,12 @@ test('real S3 + ledger adapters preserve artifacts, analysis and final outcome o
   assert.equal(f.objects[1].ContentType, 'application/json')
   assert.deepEqual(JSON.parse(f.objects[1].Body).records, f.sales)
   assert.equal(f.snapshots.length, 1)
-  // Existing short-history weekday fallback: 2 weeks × (3 × 21 + 4 × 2).
-  // Pins current calculation, not evidence that three days produce reliable forecasts.
-  assert.equal(f.snapshots[0].forecast_summary.total_expected_14d, 142)
+  // Short history produces an unavailable forecast with null totals.
+  assert.equal(f.snapshots[0].forecast_summary.status, 'unavailable')
+  assert.equal(f.snapshots[0].forecast_summary.reason, 'insufficient_history')
+  assert.equal(f.snapshots[0].forecast_summary.total_expected_14d, null)
+  assert.equal(f.snapshots[0].forecast_summary.expected_mean_daily, null)
+  assert.equal(f.snapshots[0].forecast_summary.delta_vs_recent_pct, null)
   assert.equal(f.checkpoints.length, 11)
   const saved = await f.ledger.getUpload(response.body.upload_id)
   assert.equal(saved.status, 'accepted')

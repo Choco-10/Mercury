@@ -3,8 +3,8 @@
  */
 import { createHttpClient } from './http.js'
 import { getDemoDataset } from '../data/demoData.js'
+import { predictLocalForecast, summarizeForecast } from '../../../shared/local-forecast.js'
 import {
-  forecastSeries,
   classifyTrend,
   linearTrendSlope,
   mean,
@@ -134,17 +134,7 @@ export async function fetchForecast(productId) {
   await localDelay(200)
   const ds = getDemoDataset()
   const sales = ds.sales_history[productId] || []
-  return {
-    product_id: productId,
-    model: 'trend+weekly-seasonality (local baseline)',
-    generated_at: new Date().toISOString(),
-    horizon_days: 14,
-    forecast: forecastSeries(
-      sales.map((s) => s.date),
-      sales.map((s) => s.units_sold),
-      14
-    ),
-  }
+  return predictLocalForecast(productId, sales)
 }
 
 /** POST /api/products/{id}/simulate-price */
@@ -172,35 +162,19 @@ export async function fetchAnalysis(productId) {
   const metrics = competitorMetrics(product, comps)
   const trend = classifyTrend(sales.map((s) => s.units_sold))
   const slope = linearTrendSlope(sales.slice(-30).map((s) => s.units_sold))
-  const fc = forecastSeries(
-    sales.map((s) => s.date),
-    sales.map((s) => s.units_sold),
-    14
-  )
-  const fcMean = fc.length ? mean(fc.map((f) => f.expected)) : null
-  const recentMean = mean(sales.slice(-14).map((s) => s.units_sold))
-  const fcDeltaPct = fcMean && recentMean ? Math.round(((fcMean - recentMean) / recentMean) * 1000) / 10 : null
+  const forecast = await predictLocalForecast(productId, sales)
+  const summary = summarizeForecast(forecast, sales.slice(-14).map((s) => s.units_sold))
 
   return {
     product_id: productId,
     generated_at: new Date().toISOString(),
     competitor_metrics: metrics,
     demand: { trend: trend.direction, change_pct: trend.changePct, slope_30d: Math.round(slope * 100) / 100 },
-    forecast_summary: {
-      horizon_days: 14,
-      expected_mean_daily: fcMean != null ? Math.round(fcMean) : null,
-      delta_vs_recent_pct: fcDeltaPct,
-      total_expected_14d: fc.reduce((s, f) => s + f.expected, 0),
-    },
+    forecast_summary: summary,
     recommendation: buildRecommendation({
       competitor_metrics: metrics,
       demand: { trend: trend.direction, change_pct: trend.changePct, slope_30d: Math.round(slope * 100) / 100 },
-      forecast_summary: {
-        horizon_days: 14,
-        expected_mean_daily: fcMean != null ? Math.round(fcMean) : null,
-        delta_vs_recent_pct: fcDeltaPct,
-        total_expected_14d: fc.reduce((s, f) => s + f.expected, 0),
-      },
+      forecast_summary: summary,
     }),
   }
 }
@@ -253,9 +227,10 @@ export function buildRecommendation({ competitor_metrics: cm, demand, forecast_s
 
 /**
  * POST /api/ai/chat — multi-agent grounded analysis.
- * Local mode returns a deterministic synthesis built from real computed
- * metrics (no LLM). HTTP modes currently return a backend placeholder;
- * Bedrock specialists are not implemented yet.
+ * Backend routes the question through the Supervisor (Bedrock mock by default;
+ * ProductionBedrockClient is opt-in via MOCK_BEDROCK=false). All numbers come
+ * from deterministic analysis results, never the LLM. Local mode returns a
+ * deterministic synthesis built from real computed metrics (no LLM).
  */
 export async function askAnalyst(productId, question) {
   if (USE_HTTP)

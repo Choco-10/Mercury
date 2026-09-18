@@ -76,12 +76,20 @@ test('sales and competitor writes construct unchanged natural keys', async () =>
   ])
 })
 
-test('analysis writer remains connected to injected transport', async () => {
+test('analysis writer remains connected to injected transport and uses a date key', async () => {
   const { store, commands } = fixture(() => ({}))
   await store.putAnalysis({ product_id: 'P001', generated_at: '2026-09-01T00:00:00.000Z', analysis_id: 'test-id' })
   assert.ok(commands[0] instanceof PutCommand)
-  assert.equal(commands[0].input.Item.SK, 'ANALYSIS#2026-09-01T00:00:00.000Z#test-id')
-  assert.ok(commands[0].input.ConditionExpression)
+  assert.equal(commands[0].input.Item.SK, 'ANALYSIS#2026-09-01')
+})
+
+test('analysis reader fetches the same-day key via GetCommand', async () => {
+  const { store, commands } = fixture(() => ({ Item: { data: { product_id: 'P001' } } }))
+  assert.deepEqual(await store.getAnalysis('P001'), { product_id: 'P001' })
+  assert.ok(commands[0] instanceof GetCommand)
+  assert.deepEqual(commands[0].input.Key, {
+    PK: 'PRODUCT#P001', SK: `ANALYSIS#${new Date().toISOString().slice(0, 10)}`,
+  })
 })
 
 test('router with real adapter reports exhausted upload writes as 500', async (t) => {

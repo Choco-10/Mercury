@@ -103,12 +103,26 @@ function ProductView({ id }) {
         </div>
         <div className="bg-white rounded-xl border border-slate-200 p-5">
           <div className="text-xs uppercase text-slate-500 font-medium">14-day forecast</div>
-          <div className="text-2xl font-semibold mt-1">{analysis.forecast_summary.expected_mean_daily ?? '—'} <span className="text-sm font-normal text-slate-400">units/day avg</span></div>
-          <div className="text-xs text-slate-400 mt-1">
-            {analysis.forecast_summary.delta_vs_recent_pct != null
-              ? `${formatPct(analysis.forecast_summary.delta_vs_recent_pct)} vs last 2 weeks (estimate)`
-              : 'forecast unavailable'}
-          </div>
+          {analysis.forecast_summary.status === 'available' ? (
+            <>
+              <div className="text-2xl font-semibold mt-1">{analysis.forecast_summary.expected_mean_daily ?? '—'} <span className="text-sm font-normal text-slate-400">units/day avg</span></div>
+              <div className="text-xs text-slate-400 mt-1">
+                {analysis.forecast_summary.delta_vs_recent_pct != null
+                  ? `${formatPct(analysis.forecast_summary.delta_vs_recent_pct)} vs last 2 weeks (estimate)`
+                  : 'forecast unavailable'}
+              </div>
+              <div className="mt-3 pt-3 border-t border-slate-100 text-xs text-slate-500">
+                <div>Model: {analysis.forecast_summary.model}</div>
+                <div>Training: {analysis.forecast_summary.training_summary?.observed_days} days observed · {analysis.forecast_summary.training_summary?.span_days}-day span</div>
+                <div>Origin: {analysis.forecast_summary.forecast_origin}</div>
+              </div>
+            </>
+          ) : (
+            <div className="mt-2 text-sm text-amber-600">
+              Forecast unavailable: {analysis.forecast_summary.reason}
+              <div className="text-xs text-slate-500 mt-1">Historical and competitor analysis below is unaffected.</div>
+            </div>
+          )}
         </div>
         <div className="bg-white rounded-xl border border-slate-200 p-5">
           <div className="text-xs uppercase text-slate-500 font-medium">Price vs competitor median</div>

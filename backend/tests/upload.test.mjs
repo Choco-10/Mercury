@@ -14,7 +14,8 @@ function fixture(overrides = {}) {
   const unused = async () => { throw new Error('Unexpected access') }
   const store = {
     getProducts: async () => { reads++; return ['P001', 'P002', 'P003'].map((product_id) => ({ product_id })) },
-    getProduct: unused, getSales: async () => [], getCompetitorsLatest: async () => [], putAnalysis: unused,
+    getProduct: unused, getSales: async () => [], getCompetitorsLatest: async () => [],
+    putAnalysis: unused, getAnalysis: unused,
     putSales: async (id, rows) => { writes.push([id, rows]) },
     putCompetitors: async (id, rows) => { writes.push([id, rows]) }, ...overrides,
   }

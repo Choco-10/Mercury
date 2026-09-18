@@ -8,6 +8,7 @@ import { forecastResponse, pricingResponse, ProductDataError } from '../services
 import { CsvError } from '../ingestion/csv-records.js'
 import { createIngestion } from '../ingestion/pipeline.js'
 import { UPLOAD_ID_PATTERN } from '../services/upload-ledger.js'
+import { handleAIChat } from './ai.mjs'
 
 const JSON_HEADERS = {
   'Content-Type': 'application/json',
@@ -34,10 +35,10 @@ export async function handler(event) {
 }
 
 // No default store: tests must explicitly supply every storage dependency.
-export function createHandler(store, { objectStore, ledger } = {}) {
+export function createHandler(store, { objectStore, ledger, forecastOptions } = {}) {
   const required = [
     'getProducts', 'getProduct', 'getSales',
-    'getCompetitorsLatest', 'putSales', 'putCompetitors', 'putAnalysis',
+    'getCompetitorsLatest', 'putSales', 'putCompetitors', 'putAnalysis', 'getAnalysis',
   ]
   for (const name of required) {
     if (typeof store?.[name] !== 'function') {
@@ -47,7 +48,7 @@ export function createHandler(store, { objectStore, ledger } = {}) {
 
   const {
     getProducts, getProduct, getSales,
-    getCompetitorsLatest, putAnalysis,
+    getCompetitorsLatest, putAnalysis, getAnalysis,
   } = store
 
   return async function route(event) {
@@ -93,12 +94,12 @@ export function createHandler(store, { objectStore, ledger } = {}) {
         if (sub === 'sales') return json(200, await getSales(id))
         if (sub === 'competitors') return json(200, await getCompetitorsLatest(id))
         const sales = await getSales(id)
-        if (sub === 'forecast') return json(200, forecastResponse(id, sales))
+        if (sub === 'forecast') return json(200, await forecastResponse(id, sales, forecastOptions))
         const comps = await getCompetitorsLatest(id)
         if (sub === 'analysis') {
           // Same guarded computation as POST /analyze; no snapshot is saved or read.
           try {
-            return json(200, computeAnalysis(product, sales, comps))
+            return json(200, await computeAnalysis(product, sales, comps, forecastOptions))
           } catch (err) {
             if (err instanceof AnalysisDataError) {
               return json(422, { error: err.message, issues: err.issues })
@@ -125,11 +126,21 @@ export function createHandler(store, { objectStore, ledger } = {}) {
 
         const product = await getProduct(id)
         if (!product) return json(404, { error: `Product ${id} not found` })
+        // On-demand analysis with same-day idempotency: repeated requests on the
+        // same day return the stored snapshot instead of recomputing.
+        let existing
+        try {
+          existing = await getAnalysis(id)
+        } catch (err) {
+          console.error(err)
+          return json(500, { error: 'Internal server error' })
+        }
+        if (existing) return json(200, existing)
         const sales = await getSales(id)
         const competitors = await getCompetitorsLatest(id)
         let snapshot
         try {
-          snapshot = createAnalysisSnapshot(product, sales, competitors)
+          snapshot = await createAnalysisSnapshot(product, sales, competitors, forecastOptions)
         } catch (err) {
           if (err instanceof AnalysisDataError) {
             return json(422, { error: err.message, issues: err.issues })
@@ -179,12 +190,9 @@ export function createHandler(store, { objectStore, ledger } = {}) {
         }
       }
 
-    // ---- AI chat (Bedrock phase later) ----
+    // ---- AI chat (Bedrock multi-agent) ----
     if (method === 'POST' && path === '/ai/chat') {
-      return json(200, {
-        answer: 'AI Analyst (Bedrock) will be wired in Phase 5. Currently serving deterministic analysis.',
-        agents_used: [],
-      })
+      return handleAIChat(event, store);
     }
 
     // Exact, bounded lookup only; no public list of uploads or artifact download URLs.
@@ -219,7 +227,7 @@ export function createHandler(store, { objectStore, ledger } = {}) {
       }
       if (typeof csv !== 'string' || !csv.trim()) return json(400, { error: 'csv must be a nonempty string' })
       try {
-        const result = await createIngestion({ objectStore, ledger })(store, type, csv)
+        const result = await createIngestion({ objectStore, ledger, forecastOptions })(store, type, csv)
         return json(result.statusCode, result.body)
       } catch (err) {
         if (err instanceof CsvError) return json(err.statusCode, { error: err.message, issues: err.issues })

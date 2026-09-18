@@ -44,7 +44,15 @@ export default function AIAnalyst() {
       const res = await askAnalyst(productId, q)
       clearInterval(timer)
       setStage(AGENT_STAGES.length)
-      setMessages((m) => [...m, { role: 'analyst', text: res.answer, agents: res.agents_used }])
+      setMessages((m) => [...m, {
+        role: 'analyst',
+        text: res.answer ?? res.response,
+        agents: res.agents_used ?? res.analysis_stages?.map((s) => s.stage),
+        confidence: res.confidence,
+        dataSources: res.data_sources,
+        missingData: res.missing_data,
+        followUps: res.suggested_follow_up,
+      }])
     } catch (e) {
       clearInterval(timer)
       setStage(-1)
@@ -88,10 +96,35 @@ export default function AIAnalyst() {
             <div key={i} className={m.role === 'user' ? 'flex justify-end' : 'flex justify-start'}>
               <div className={`max-w-[80%] rounded-xl px-4 py-3 text-sm whitespace-pre-line ${m.role === 'user' ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-800'}`}>
                 {m.text}
-                {m.role === 'analyst' && m.agents?.length > 0 && (
+                {m.role === 'analyst' && (m.agents?.length > 0 || m.confidence) && (
                   <div className="mt-2 flex flex-wrap gap-1.5">
-                    {m.agents.map((a) => <Badge key={a} tone="info">{a.replace('_', ' ')}</Badge>)}
+                    {m.agents?.map((a) => <Badge key={a} tone="info">{String(a).replace(/_/g, ' ')}</Badge>)}
+                    {m.confidence && <Badge tone={m.confidence === 'high' ? 'good' : m.confidence === 'low' ? 'warn' : 'neutral'}>confidence: {m.confidence}</Badge>}
                     <Badge tone="neutral">grounded on computed metrics</Badge>
+                  </div>
+                )}
+                {m.role === 'analyst' && m.dataSources?.length > 0 && (
+                  <div className="mt-2 text-xs text-slate-500">
+                    Sources: {m.dataSources.join(', ')}
+                  </div>
+                )}
+                {m.role === 'analyst' && m.missingData?.length > 0 && (
+                  <div className="mt-1 text-xs text-amber-700">
+                    Missing data: {m.missingData.join(', ')}
+                  </div>
+                )}
+                {m.role === 'analyst' && m.followUps?.length > 0 && (
+                  <div className="mt-2 flex flex-wrap gap-1.5">
+                    {m.followUps.map((s) => (
+                      <button
+                        key={s}
+                        onClick={() => ask(s)}
+                        disabled={busy}
+                        className="text-xs px-2.5 py-1 rounded-full border border-indigo-200 text-indigo-600 hover:border-indigo-400 disabled:opacity-40"
+                      >
+                        {s}
+                      </button>
+                    ))}
                   </div>
                 )}
               </div>

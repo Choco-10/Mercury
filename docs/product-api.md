@@ -20,6 +20,29 @@ Every product-specific route checks product existence first. Sales and forecast
 no longer read competitors; competitor reads no longer depend on sales. Unknown
 methods/subroutes return 404 and do not read storage.
 
+## Forecast availability diagnostics — first Phase 3 slice
+
+The backend forecast envelope additionally includes `status` and `reason`:
+
+- Success: `status: "available"`, `reason: null`, existing model label and predictions.
+  All-zero expected sales are a valid available forecast.
+- Unavailable: `status: "unavailable"`, `model: null`, `forecast: []`.
+  `reason` is a controlled public code, never an internal exception message:
+  - `insufficient_history`: an array with fewer than three records.
+  - `invalid_sales_data`: non-array input, or invalid records in an array meeting
+    that minimum (dates, duplicates, units or mismatched product IDs).
+  - `calculation_failed`: an unexpected validation/computation exception.
+
+The existing validation order checks record count before individual records.
+HTTP 200 and legacy envelope fields are unchanged; storage failures remain 500.
+These additions currently apply to the backend forecast endpoint only, not browser
+demo envelopes or analysis summaries. No forecasting-service extraction, new data
+policy, model evaluation, calibration or graceful analysis degradation is included
+in this slice. Three records is still only the old computational minimum. Zero
+history still uses the existing interval fallback; availability is not a claim of
+statistical reliability. Pricing behavior is unchanged.
+
+
 ## Pricing
 
 POST `/api/products/{id}/simulate-price` accepts `scenario_prices`: 1–25 positive
