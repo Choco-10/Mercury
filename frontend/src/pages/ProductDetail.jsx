@@ -7,7 +7,7 @@ import {
 import * as api from '../services/api.js'
 import { loadProductView } from '../services/views.js'
 const { simulatePrice } = api
-import { formatINR, formatPct, formatDate } from '../lib/format.js'
+import { formatINR, formatPct, formatDate, formatUnits, floorUnits } from '../lib/format.js'
 import { Card, Badge, TrendBadge, LoadingState, ErrorState } from '../components/ui.jsx'
 
 export default function ProductDetail() {
@@ -40,8 +40,7 @@ function ProductView({ id }) {
     setSimError('')
     setScenario(null)
     try {
-      const p = state.product.price
-      const result = await simulatePrice(id, [p - 100, p - 50, p, p + 50, p + 100])
+      const result = await simulatePrice(id, 'maximize_revenue')
       setScenario(result)
     } catch (err) {
       setSimError(err.message)
@@ -66,7 +65,7 @@ function ProductView({ id }) {
   const last30 = salesChartData.slice(-30)
   const forecastReady = forecast && forecast.forecast?.length > 0
   const forecastChartData = forecastReady
-    ? forecast.forecast.map((f) => ({ date: formatDate(f.date), expected: f.expected, band: [f.lower, f.upper] }))
+    ? forecast.forecast.map((f) => ({ date: formatDate(f.date), expected: floorUnits(f.expected), band: [floorUnits(f.lower), floorUnits(f.upper)] }))
     : []
 
   return (
@@ -105,7 +104,7 @@ function ProductView({ id }) {
           <div className="text-xs uppercase text-slate-500 font-medium">14-day forecast</div>
           {analysis.forecast_summary.status === 'available' ? (
             <>
-              <div className="text-2xl font-semibold mt-1">{analysis.forecast_summary.expected_mean_daily ?? '—'} <span className="text-sm font-normal text-slate-400">units/day avg</span></div>
+              <div className="text-2xl font-semibold mt-1">{formatUnits(analysis.forecast_summary.expected_mean_daily)} <span className="text-sm font-normal text-slate-400">units/day avg</span></div>
               <div className="text-xs text-slate-400 mt-1">
                 {analysis.forecast_summary.delta_vs_recent_pct != null
                   ? `${formatPct(analysis.forecast_summary.delta_vs_recent_pct)} vs last 2 weeks (estimate)`
@@ -136,7 +135,7 @@ function ProductView({ id }) {
         </div>
       </div>}
       {/* Demand chart */}
-      <Card title="Demand trend" subtitle="Units sold — last 30 days with price overlay">
+      <Card title="Demand trend" subtitle="Units sold, last 30 days with price overlay">
         {sales.length === 0 && <p className="text-sm text-amber-700">No sales history available.</p>}
         <ResponsiveContainer width="100%" height={260}>
           <ComposedChart data={last30}>
@@ -151,7 +150,7 @@ function ProductView({ id }) {
           </ComposedChart>
         </ResponsiveContainer>
         <p className="text-xs text-slate-400 mt-2">
-          The data suggests correlation between price and demand over this window; the forecast is a statistical estimate, not a guarantee.
+          Data reflects the last 30 days of recorded sales and prices.
         </p>
       </Card>
 
@@ -177,8 +176,8 @@ function ProductView({ id }) {
               {forecast.forecast.slice(0, 4).map((f) => (
                 <div key={f.date} className="border border-slate-200 rounded-lg px-3 py-2">
                   <div className="text-slate-500">{formatDate(f.date)}</div>
-                  <div className="font-medium text-slate-800">{f.expected} units</div>
-                  <div className="text-slate-400">{f.lower}–{f.upper} (80% band)</div>
+                  <div className="font-medium text-slate-800">{formatUnits(f.expected)} units</div>
+                  <div className="text-slate-400">{floorUnits(f.lower)} to {floorUnits(f.upper)} (80% band)</div>
                 </div>
               ))}
             </div>
@@ -197,28 +196,28 @@ function ProductView({ id }) {
             <thead>
               <tr className="text-left text-xs text-slate-500 border-b border-slate-200">
                 <th className="py-2 pr-4">Competitor</th>
+                <th className="py-2 pr-4">Product</th>
                 <th className="py-2 pr-4">Price</th>
                 <th className="py-2 pr-4">Discount</th>
-                <th className="py-2 pr-4">Rating</th>
                 <th className="py-2">vs your price</th>
               </tr>
             </thead>
             <tbody>
               <tr className="border-b border-slate-100 bg-indigo-50/50">
                 <td className="py-2 pr-4 font-medium text-indigo-800">Your product</td>
+                <td className="py-2 pr-4 font-medium">{product.product_id}</td>
                 <td className="py-2 pr-4 font-medium">{formatINR(product.price)}</td>
                 <td className="py-2 pr-4">{product.discount}%</td>
-                <td className="py-2 pr-4">★ {product.rating}</td>
-                <td className="py-2">—</td>
+                <td className="py-2">-</td>
               </tr>
               {competitors.map((c) => {
-                const diffPct = Math.round(((c.price - product.price) / product.price) * 1000) / 10
+                const diffPct = Math.round(((c.competitor_price - product.price) / product.price) * 1000) / 10
                 return (
                   <tr key={c.competitor_id} className="border-b border-slate-100">
-                    <td className="py-2 pr-4">{c.title}</td>
-                    <td className="py-2 pr-4">{formatINR(c.price)}</td>
-                    <td className="py-2 pr-4">{c.discount}%</td>
-                    <td className="py-2 pr-4">★ {c.rating}</td>
+                    <td className="py-2 pr-4">{c.competitor_id}</td>
+                    <td className="py-2 pr-4">{c.competitor_product_id}</td>
+                    <td className="py-2 pr-4">{formatINR(c.competitor_price)}</td>
+                    <td className="py-2 pr-4">{c.competitor_discount}%</td>
                     <td className="py-2">
                       <Badge tone={diffPct > 3 ? 'good' : diffPct < -3 ? 'warn' : 'neutral'}>
                         {diffPct > 0 ? '+' : ''}{diffPct}%
@@ -242,7 +241,7 @@ function ProductView({ id }) {
       {/* Pricing simulator */}
       <Card
         title="Pricing what-if simulator"
-        subtitle="Deterministic estimates from your recent demand — the decision is yours"
+        subtitle="Compare price points around your current price"
         actions={
           <button
             onClick={runSimulation}
@@ -256,7 +255,7 @@ function ProductView({ id }) {
         {simError && <p role="alert" className="text-sm text-rose-700">{simError}</p>}
         {!scenario && !simLoading && (
           <p className="text-sm text-slate-500 py-4">
-            Run the simulator to compare price points ±₹100 around your current price. Estimates use recent demand and a fixed elasticity assumption — actual results may differ.
+            Run the simulator to compare price points ±₹100 around your current price.
           </p>
         )}
         {simLoading && <p className="text-sm text-slate-400 py-4">Calculating scenarios…</p>}
@@ -268,23 +267,44 @@ function ProductView({ id }) {
                   <tr className="text-left text-xs text-slate-500 border-b border-slate-200">
                     <th className="py-2 pr-4">Price</th>
                     <th className="py-2 pr-4">Change</th>
-                    <th className="py-2 pr-4">Expected demand/day</th>
-                    <th className="py-2 pr-4">Est. revenue/day</th>
-                    <th className="py-2">Position</th>
+                    <th className="py-2 pr-4">Predicted units/day</th>
+                    <th className="py-2 pr-4">Predicted revenue/day</th>
+                    <th className="py-2">Position vs current</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {scenario.scenarios.map((s) => {
-                    const isCurrent = s.price === scenario.baseline_price
+                  {scenario.candidates.map((s) => {
+                    const isCurrent = s.price === scenario.current_price
+                    const position =
+                      s.price < scenario.current_price * 0.97
+                        ? 'undercutting'
+                        : s.price > scenario.current_price * 1.03
+                          ? 'premium'
+                          : 'at_par'
                     return (
-                      <tr key={s.price} className={`border-b border-slate-100 ${isCurrent ? 'bg-indigo-50/50' : ''}`}>
+                      <tr
+                        key={s.price}
+                        className={`border-b border-slate-100 ${isCurrent ? 'bg-indigo-50/50' : ''}`}
+                      >
                         <td className={`py-2 pr-4 ${isCurrent ? 'font-semibold text-indigo-800' : 'font-medium'}`}>
                           {formatINR(s.price)}{isCurrent && ' (current)'}
                         </td>
-                        <td className="py-2 pr-4">{formatPct(s.price_change_pct)}</td>
-                        <td className="py-2 pr-4">{s.expected_daily_demand} units</td>
-                        <td className="py-2 pr-4">{formatINR(s.estimated_daily_revenue)}</td>
-                        <td className="py-2"><Badge tone={s.competitor_position === 'undercutting' ? 'warn' : s.competitor_position === 'premium' ? 'bad' : 'good'}>{s.competitor_position.replace('_', ' ')}</Badge></td>
+                        <td className="py-2 pr-4">{formatPct(s.price_change_percent)}</td>
+                        <td className="py-2 pr-4">{formatUnits(s.predicted_units)} units</td>
+                        <td className="py-2 pr-4">{formatINR(s.predicted_revenue)}</td>
+                        <td className="py-2">
+                          <Badge
+                            tone={
+                              position === 'undercutting'
+                                ? 'warn'
+                                : position === 'premium'
+                                  ? 'bad'
+                                  : 'good'
+                            }
+                          >
+                            {position.replace('_', ' ')}
+                          </Badge>
+                        </td>
                       </tr>
                     )
                   })}
@@ -292,34 +312,68 @@ function ProductView({ id }) {
               </table>
             </div>
             <ResponsiveContainer width="100%" height={200}>
-              <BarChart data={scenario.scenarios.map((s) => ({ name: formatINR(s.price), revenue: s.estimated_daily_revenue, demand: s.expected_daily_demand }))}>
+              <BarChart
+                data={scenario.candidates.map((s) => ({
+                  name: formatINR(s.price),
+                  revenue: Math.floor(s.predicted_revenue),
+                  demand: floorUnits(s.predicted_units),
+                }))}
+              >
                 <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
                 <XAxis dataKey="name" tick={{ fontSize: 11 }} />
                 <YAxis tick={{ fontSize: 11 }} />
                 <Tooltip />
                 <Legend wrapperStyle={{ fontSize: 12 }} />
-                <Bar dataKey="revenue" name="Est. daily revenue (₹)" fill="#6366f1" radius={[4, 4, 0, 0]} />
+                <Bar
+                  dataKey="revenue"
+                  name="Predicted daily revenue (₹)"
+                  fill="#6366f1"
+                  radius={[4, 4, 0, 0]}
+                />
               </BarChart>
             </ResponsiveContainer>
+
+            {typeof scenario.recommended_price === 'number' && (
+              <div className="mt-6 border-t border-slate-200 pt-6">
+                <h2 className="text-lg font-semibold text-slate-900">Recommended price</h2>
+                <p className="text-sm text-slate-500 mt-1">
+                  Objective: {String(scenario.objective || '').replace(/_/g, ' ')} · inference date: {formatDate(scenario.inference_date)}
+                </p>
+                <div className="grid grid-cols-2 md:grid-cols-3 gap-4 mt-4">
+                  <div>
+                    <div className="text-sm text-slate-500">Recommended price</div>
+                    <div className="text-2xl font-semibold text-indigo-700">
+                      {formatINR(scenario.recommended_price)}
+                    </div>
+                  </div>
+                  <div>
+                    <div className="text-sm text-slate-500">Predicted units/day</div>
+                    <div className="text-2xl font-semibold">{formatUnits(scenario.predicted_units)}</div>
+                  </div>
+                  <div>
+                    <div className="text-sm text-slate-500">Predicted revenue/day</div>
+                    <div className="text-2xl font-semibold">{formatINR(scenario.predicted_revenue)}</div>
+                  </div>
+                </div>
+                {scenario.reasoning && (
+                  <p className="text-sm text-slate-600 mt-3 max-w-2xl">{scenario.reasoning}</p>
+                )}
+                {(() => {
+                  // Hide internal pipeline flags (e.g. no_bedrock_agent_review); show only user-relevant notes.
+                  const notes = (scenario.missing_data || []).filter((n) => n && !/^no_/i.test(n))
+                  return notes.length > 0 ? (
+                    <p className="text-xs text-amber-700 mt-2 bg-amber-50 border border-amber-200 rounded px-3 py-2">
+                      Note: {notes.join('; ')}.
+                    </p>
+                  ) : null
+                })()}
+              </div>
+            )}
           </>
         )}
-        <p className="text-xs text-slate-400 mt-3">
-          These are model-based estimates, not guarantees. Mercury does not change prices automatically.
-        </p>
       </Card>
 
-      {/* Recommendation / AI insights */}
-      {rec && <Card title="Why this status?" subtitle="Evidence behind the current recommendation">
-        <div className="space-y-2">
-          {rec.status === 'attention' && (
-            <Badge tone="warn">Suggested action: {rec.suggested_action.replace('_', ' ')}{rec.candidate_price ? ` — consider testing ${formatINR(rec.candidate_price)}` : ''}</Badge>
-          )}
-          <ul className="text-sm text-slate-700 space-y-1.5 list-disc list-inside">
-            {rec.reasons.map((r, i) => <li key={i}>{r}</li>)}
-          </ul>
-          <p className="text-xs text-slate-400 pt-1">Confidence: {rec.confidence}. Based on deterministic analysis of your data — verify with your own judgment before acting.</p>
-        </div>
-      </Card>}
+      {/* Pricing recommendation details live in the what-if simulator above */}
     </div>
   )
 }

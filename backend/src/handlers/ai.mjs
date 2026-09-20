@@ -30,8 +30,8 @@ Available context includes:
 - pricing_scenarios: pricing simulation results (if available)
 - specialist_results: findings from market_analyst, competitor_analyst, pricing_analyst
 
-Example response (GROUNDED):
-"Your product P001 (Wireless Earbuds Pro X2) is priced at ₹1,599, which is 3.2% above the competitor median of ₹1,549. Your 14-day forecast shows expected demand of 67 units/day, down 2.3% from the recent average. Among 5 competitors, 3 are priced below you."
+Example response (GROUNDED) — every <placeholder> is filled from the actual context, never invented:
+"Your product <product_id> (<title>) is priced at ₹<price>, which is <difference_percent>% above the competitor median of ₹<median_price>. Your 14-day forecast shows expected demand of <expected_daily_demand> units/day, down <change_percent>% from the recent average. Among <competitor_count> competitors, <priced_below_you> are priced below you."
 
 Example response (UNGROUNDED - WRONG):
 "You should lower your price because competitors are undercutting you." // No numbers, no sources
@@ -67,8 +67,9 @@ export async function handleAIChat(event, store, bedrockClient = null) {
   }
 
   try {
-    // Initialize Bedrock client if not provided (mock by default; no AWS costs).
-    const bedrock = bedrockClient || createBedrockClient({ mock: true });
+    // Always the real Bedrock runtime client unless a caller injects a client
+    // explicitly (tests / the offline dev double). There is no mock default.
+    const bedrock = bedrockClient || createBedrockClient();
     
     // Create supervisor agent
     const supervisor = new SupervisorAgent({ bedrockClient: bedrock });

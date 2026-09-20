@@ -1,12 +1,12 @@
 /**
- * Analysis service — deterministic calculations identical to frontend demo mode.
+ * Analysis service — deterministic calculations used by every consumer.
  * Reuses shared/analytics.js so numbers match across local and AWS modes.
  */
 import { classifyTrend, linearTrendSlope, mean } from '../shared/analytics.js'
 import { predictLocalForecast, summarizeForecast } from '../shared/local-forecast.js'
 
 export function competitorMetrics(product, competitors) {
-  const prices = competitors.map((c) => c.price)
+  const prices = competitors.map((c) => c.competitor_price)
   const avg = mean(prices)
   const med = median(prices)
   return {

@@ -4,11 +4,11 @@
  * Does NOT calculate numbers — reads them from analysis result
  */
 
-import { createBedrockClient, MockBedrockClient } from '../bedrock-client.js';
+import { createBedrockClient } from '../bedrock-client.js';
 
 export class MarketAnalyst {
   constructor(bedrockClient = null) {
-    this.bedrock = bedrockClient || createBedrockClient({ mock: true });
+    this.bedrock = bedrockClient || createBedrockClient();
   }
 
   /**

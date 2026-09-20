@@ -1,0 +1,40 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "AllowSageMakerServicePull",
+      "Effect": "Allow",
+      "Principal": {
+        "Service": "sagemaker.amazonaws.com"
+      },
+      "Action": [
+        "ecr:BatchGetImage",
+        "ecr:GetDownloadUrlForLayer"
+      ]
+    },
+    {
+      "Sid": "AllowAccountRootPull",
+      "Effect": "Allow",
+      "Principal": {
+        "AWS": "arn:aws:iam::780891107631:root"
+      },
+      "Action": [
+        "ecr:BatchGetImage",
+        "ecr:GetDownloadUrlForLayer",
+        "ecr:BatchCheckLayerAvailability"
+      ]
+    },
+    {
+      "Sid": "AllowSageMakerRolePull",
+      "Effect": "Allow",
+      "Principal": {
+        "AWS": "arn:aws:iam::780891107631:role/mercury-sagemaker-exec"
+      },
+      "Action": [
+        "ecr:BatchGetImage",
+        "ecr:GetDownloadUrlForLayer",
+        "ecr:BatchCheckLayerAvailability"
+      ]
+    }
+  ]
+}

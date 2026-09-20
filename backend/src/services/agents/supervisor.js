@@ -10,7 +10,7 @@ import { createPricingAnalyst } from './pricing-analyst.js';
 
 export class SupervisorAgent {
   constructor(config = {}) {
-    this.bedrock = config.bedrockClient || createBedrockClient({ mock: true });
+    this.bedrock = config.bedrockClient || createBedrockClient();
     this.marketAnalyst = config.marketAnalyst || createMarketAnalyst({ bedrockClient: this.bedrock });
     this.competitorAnalyst = config.competitorAnalyst || createCompetitorAnalyst({ bedrockClient: this.bedrock });
     this.pricingAnalyst = config.pricingAnalyst || createPricingAnalyst({ bedrockClient: this.bedrock });

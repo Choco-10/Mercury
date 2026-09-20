@@ -1,0 +1,50 @@
+{
+  "features": [
+    "price",
+    "day_of_week",
+    "month",
+    "sales_7d_avg",
+    "sales_30d_avg",
+    "price_change_percent",
+    "event"
+  ],
+  "target": "units_sold",
+  "objectives": [
+    "increase_sales",
+    "maximize_revenue"
+  ],
+  "candidate_price_deltas_percent": [
+    -10,
+    -7.5,
+    -5,
+    -2.5,
+    0,
+    2.5,
+    5
+  ],
+  "candidate_price_rounding": {
+    "decimals": 0,
+    "fallback_decimals": 2
+  },
+  "endpoint": {
+    "content_type": "text/csv",
+    "delimiter": ",",
+    "value_format": "%.6f"
+  },
+  "min_history_days": 30,
+  "sales_columns": [
+    "date",
+    "product_id",
+    "price",
+    "units_sold",
+    "discount"
+  ],
+  "competitor_columns": [
+    "date",
+    "competitor_id",
+    "product_id",
+    "competitor_product_id",
+    "competitor_price",
+    "competitor_discount"
+  ]
+}

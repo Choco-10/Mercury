@@ -8,18 +8,18 @@ offline tests use fake S3 transports or explicitly injected in-memory adapters.
 ## Schemas (headers may be reordered; extra/missing columns are rejected)
 
 ```text
-sales:        date,product_id,units_sold,price
-competitors:  observation_date,product_id,competitor_id,title,price,rating,discount
+sales:        date,product_id,price,units_sold,discount
+competitors:  date,competitor_id,product_id,competitor_product_id,competitor_price,competitor_discount
 ```
 
 ## Validation (whole file first; invalid files cause no writes)
 
 - RFC 4180-style parsing: quoted fields, escaped `""` quotes, embedded commas/newlines, BOM, CRLF.
 - Dates must be real calendar `YYYY-MM-DD`.
-- Numbers: plain nonnegative decimals; `price > 0`; `units_sold` a safe integer; `rating` ≤ 5; `discount` ≤ 100.
-- IDs: 1–64 chars of `A–Z a–z 0–9 _ -`; titles 1–500 chars without control characters.
+- Numbers: plain nonnegative decimals; `price > 0` and `competitor_price > 0`; `units_sold` a safe integer; `discount` and `competitor_discount` ≤ 100.
+- IDs: `product_id`, `competitor_id` and `competitor_product_id` are 1–64 chars of `A–Z a–z 0–9 _ -`.
 - Duplicate natural keys **within one file** are rejected: sales `(product_id, date)`;
-  competitors `(product_id, competitor_id, observation_date)`.
+  competitors `(product_id, competitor_id, date)`.
 - Every `product_id` must exist in the product catalog.
 - Limits: ≤ 256 KiB of CSV, ≤ 2000 data records, ≤ 50 reported issues (HTTP 422 `issues`; 413 when over limits).
 
@@ -50,6 +50,8 @@ Do not retry the entire upload merely because analysis is unavailable.
 `GET /api/data/uploads/<upload_id>` returns the last acknowledged outcome (200),
 400 for an invalid UUID, or 404 if no record exists. It does not expose download URLs
 or offer a list of uploads. A UUID is not authentication: this demo API remains public.
+The Data page no longer surfaces this lookup — the outcome is shown once, immediately
+after an upload — so the route is currently API-only.
 DynamoDB key: `PK=SELLER#SELLER001`, `SK=UPLOAD#<uuid>`. Create requires nonexistence;
 updates require existence. One invocation owns each generated ID; no concurrent resume.
 

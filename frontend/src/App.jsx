@@ -5,7 +5,6 @@ import Products from './pages/Products.jsx'
 import ProductDetail from './pages/ProductDetail.jsx'
 import AIAnalyst from './pages/AIAnalyst.jsx'
 import DataPage from './pages/DataPage.jsx'
-import Settings from './pages/Settings.jsx'
 
 export default function App() {
   return (
@@ -17,7 +16,6 @@ export default function App() {
           <Route path="/products/:id" element={<ProductDetail />} />
           <Route path="/analyst" element={<AIAnalyst />} />
           <Route path="/data" element={<DataPage />} />
-          <Route path="/settings" element={<Settings />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Route>
       </Routes>

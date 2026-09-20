@@ -43,22 +43,88 @@ history still uses the existing interval fallback; availability is not a claim o
 statistical reliability. Pricing behavior is unchanged.
 
 
+## Create product
+
+POST `/api/products` creates a product (both local loopback server and Lambda):
+
+- Required JSON fields: `product_id` (1–64 chars, letters/digits/underscore/hyphen),
+  `title` (1–200 chars), `category` (1–100 chars), `price` (positive finite number).
+- Optional: `subcategory` (1–100 chars), `discount` (0–100), `rating` (0–5),
+  `inventory` (nonnegative integer). Omitted optionals default to 0; blank
+  `subcategory` is omitted from the stored record. Text fields are trimmed.
+- Success: 201 with the stored product including a server-generated `created_at`.
+- Errors before any write: 400 for malformed/non-object JSON or invalid fields,
+  409 when `product_id` already exists. Adapters without `putProduct` return 501.
+- Creation does not require sales or competitor data. Analysis until both CSV
+  uploads exist returns 422 (`AnalysisDataError`), which is the documented
+  on-demand analysis contract.
+
+## Update product
+
+PUT `/api/products/{id}` applies a **partial merge** — send only the fields you
+want to change; everything else keeps its stored value:
+
+- Updatable: `title`, `category`, `subcategory`, `price`, `discount`, `rating`,
+  `inventory`. Same bounds as create, applied only to the fields supplied.
+- `subcategory: ""` (or whitespace) clears the field; omitting it keeps it.
+- `product_id` is **immutable** — it is the storage key, and renaming would orphan
+  every sales/competitor/analysis row. Echoing the same value is allowed; any
+  other value returns 400. Unknown body fields return 400.
+- `created_at` is preserved and `updated_at` is stamped on success (200).
+- Unknown product returns 404. Adapters without `putProduct` return 501.
+- On success the product's same-day analysis snapshots are invalidated so the next
+  read recomputes instead of serving a report built from the previous values
+  (`deleteAnalysis` is optional: adapters without it skip invalidation).
+
+## Delete product
+
+DELETE `/api/products/{id}` removes the product **and cascades** to its sales,
+competitor observations and analysis snapshots — otherwise recreating the same id
+would resurrect the old rows. Returns 200 `{ deleted: true, product_id }`,
+404 for an unknown product, and 501 for adapters without `deleteProduct`.
+The request carries no body.
+
+Cascade is **not atomic** and there is no confirmation step in the API. On
+DynamoDB the children are queried and batch-deleted first, so a failure mid-way
+leaves the product visible with degraded data and the delete safe to retry. A
+product with hundreds of rows may exceed the Lambda timeout; a production design
+would move this to an asynchronous delete job.
+
 ## Pricing
 
-POST `/api/products/{id}/simulate-price` accepts `scenario_prices`: 1–25 positive
-finite numbers. The 25-scenario cap is an application workload bound, not a
-statistical or marketplace limit. Invalid request inputs return 400.
+POST `/api/products/{id}/simulate-price` accepts an optional JSON body
+`{ "objective": "increase_sales" | "maximize_revenue" }`. The backend derives
+the seven contract candidate prices from the current product price, runs each
+through the SageMaker endpoint (or the local endpoint double in offline mode),
+computes predicted revenue in application code, and returns the objective-optimal
+pick. The previous `scenario_prices` request field is no longer accepted. Invalid
+or missing request body returns 400.
 
-A valid baseline requires positive finite product price and at least one valid
-sales record; unique YYYY-MM-DD dates and nonnegative safe-integer units are
-required. History is sorted without changing source records. All-zero recent
-history returns 422 instead of activating the old one-unit fallback. Missing or
-invalid baseline data returns 422. Unsafe scenario arithmetic returns 400 rather
-than serializing non-finite numbers as null or reporting unsafe integer outputs.
+A valid baseline requires a positive finite product price and seller history that
+satisfies the contract minimum history requirement; unique YYYY-MM-DD dates and
+nonnegative safe-integer units are required. Missing or invalid baseline data
+returns 422. Endpoint invocation failures return 502; a missing or unconfigured
+endpoint returns 503.
 
-Success shape stays product_id, baseline_price, scenarios. The existing assumed
-elasticity (1.4), 21-record baseline, daily estimates and baseline-relative
-competitor_position labels are unchanged. This is not model validation.
+Success shape:
+```json
+{
+  "product_id": "p...",
+  "objective": "maximize_revenue",
+  "current_price": 1200,
+  "inference_date": "2024-01-15",
+  "recommended_price": 1100,
+  "predicted_units": 18.5,
+  "predicted_revenue": 20350.0,
+  "reasoning": "Pricing simulation ran the seven candidate prices through the model and selected the objective-optimal candidate; no Bedrock agent review was performed.",
+  "competitor_comparison": null,
+  "confidence": "low",
+  "candidates": [
+    { "price": 1100, "predicted_units": 18.5, "predicted_revenue": 20350.0, "price_change_percent": -8.33 }
+  ],
+  "missing_data": ["no_bedrock_agent_review"]
+}
+
 
 ## Upload contract
 
@@ -70,8 +136,9 @@ Malformed JSON and invalid envelope fields return 400 before storage access.
 
 Localhost and Lambda use the same router/calculations. The frontend HTTP client
 is shared for localhost/AWS; Product Detail keeps optional data failures separate,
-and catalog pages preserve products whose analyses are unavailable. Browser demo
-has representative five-product success parity tests, not full error parity.
+and catalog pages preserve products whose analyses are unavailable. There is no
+browser-demo path: the frontend HTTP client parity tests run against the real
+loopback backend.
 Forecast date regularity, interval calibration and model refinements remain later
 phase work. AWS integration has not been executed for this code checkpoint.
 

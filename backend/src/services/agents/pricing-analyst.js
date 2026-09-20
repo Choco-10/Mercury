@@ -9,7 +9,7 @@ import { createBedrockClient } from '../bedrock-client.js';
 
 export class PricingAnalyst {
   constructor(bedrockClient = null) {
-    this.bedrock = bedrockClient || createBedrockClient({ mock: true });
+    this.bedrock = bedrockClient || createBedrockClient();
   }
 
   /**

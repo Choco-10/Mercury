@@ -54,15 +54,4 @@ GET and POST share guarded computation: both return 422 for insufficient or
 invalid source data and a generic 500 for unexpected calculation failures.
 Their successful calculation fields remain identical.
 
-## Offline validation
-
-Run in PowerShell:
-
-```powershell
-node --test "C:\Users\harshiv\Desktop\Mercury\backend\tests\simulate-price.test.mjs" "C:\Users\harshiv\Desktop\Mercury\backend\tests\analyze.test.mjs"
-```
-
-Router tests use in-memory storage. Writer/reader tests use the actual SDK
-PutCommand/GetCommand with an injected fake send method: no AWS client,
-credentials or network requests.
-Offline tests do not prove AWS integration.
+Router testing (when reintroduced) should use in-memory storage.

@@ -51,7 +51,7 @@ export default function Dashboard() {
       <header>
         <h1 className="text-xl font-semibold text-slate-900">Dashboard</h1>
         <p className="text-sm text-slate-500 mt-0.5">
-          Business overview across your catalog — evidence-based status for each product.
+          Business overview across your catalog. Evidence-based status for each product.
         </p>
       </header>
 
@@ -61,14 +61,14 @@ export default function Dashboard() {
         <StatTile label="Products monitored" value={products.length} />
         <StatTile
           label="Need attention"
-          value={analysesList.length ? attentionCount : analysisDone ? '—' : '…'}
+          value={analysesList.length ? attentionCount : analysisDone ? '-' : '…'}
           tone={attentionCount > 0 ? 'warn' : 'good'}
           hint={analysesList.length ? `${attentionCount} of ${analysesList.length} analyzed flagged` : undefined}
         />
-        <StatTile label="Avg competitor median price" value={avgCompetitorPrice != null ? formatINR(avgCompetitorPrice) : analysisDone ? '—' : '…'} />
+        <StatTile label="Avg competitor median price" value={avgCompetitorPrice != null ? formatINR(avgCompetitorPrice) : analysisDone ? '-' : '…'} />
         <StatTile
           label="14-day expected revenue"
-          value={analysesList.length ? formatCompactINR(totalRevenue14d) : analysisDone ? '—' : '…'}
+          value={analysesList.length ? formatCompactINR(totalRevenue14d) : analysisDone ? '-' : '…'}
           hint="forecast × price (estimate)"
         />
         <StatTile

@@ -1,6 +1,10 @@
 # Mercury — Amazon Seller Intelligence
 
-Decision-support MVP for one demo seller and five products. Numerical forecasts, competitor metrics and pricing simulations are computed by application code, not an LLM. No automatic price changes or transactions.
+Decision-support MVP for seller-entered catalogs. The app boots with an empty
+catalog — every product is created in the UI and every observation arrives via
+CSV upload. Numerical forecasts, competitor metrics and pricing simulations are
+computed by application code and the XGBoost model, not an LLM. No automatic
+price changes or transactions.
 
 ## Problem
 
@@ -15,15 +19,14 @@ Tools that automate pricing remove the seller from the decision; static reports 
 
 ## Solution
 
-Mercury — Amazon Seller Intelligence is a decision-support platform for one demo seller with five products in competitive categories:
-
 - **Dashboard** — catalog overview with per-product attention status, trend, forecast direction and price position.
-- **Demand analytics + 14-day forecast** — historical units with a forecast including an uncertainty band, always labeled as estimates.
+- **Demand analytics + 14-day forecast** — historical units with a forecast including an uncertainty band, always labeled as estimates. Products with fewer than 28 days of complete history show `insufficient_data`, not a forecast.
 - **Competitor intelligence** — deterministic min/median/avg/max, seller position and per-competitor comparison.
 - **Pricing what-if simulator** — expected daily demand, estimated revenue and competitor position per scenario price.
+- **XGBoost pricing recommendation** — seven candidate prices scored by the trained model, revenue computed in application code, and a Bedrock multi-agent synthesis that must recommend one of the seven candidates.
 - **AI Analyst** — a multi-agent, grounded conversational explanation of the computed evidence.
 
-The application never changes prices or performs transactions: it produces recommendations and simulations for the seller to decide (§37).
+The application never changes prices or performs transactions: it produces recommendations and simulations for the seller to decide.
 
 ## Architecture
 
@@ -37,18 +40,17 @@ The application never changes prices or performs transactions: it produces recom
                            │
                            ▼
                   AWS Lambda (Node 22)
-             handlers/api.mjs + handlers/ai.mjs
+              handlers/api.mjs + handlers/ai.mjs
                            │
      ┌─────────────┬───────┴────────┬───────────────────┐
      ▼             ▼                ▼                   ▼
-  DynamoDB         S3            Bedrock           Forecasting
- (single table:  (versioned     (multi-agent;     (deterministic
-  products,       datasets,      mock client       trend+seasonality
-  sales,          upload         by default:       baseline inside the
-  competitors,    artifacts,     Supervisor +      Lambda, isolated
-  daily analysis  ledger)        Market/           behind ForecastService;
-  snapshots)                     Competitor/       SageMaker can replace
-                                 Pricing agents)   it without rewrites)
+   DynamoDB         S3            Bedrock           SageMaker XGBoost
+ (single table:  (versioned     (real runtime      (serverless endpoint
+  products,       datasets +     client: Claude 3   pricing-xgboost-endpoint
+  sales,          model +        Haiku; Supervisor  for the 7 pricing
+  competitors,    upload         + Market/          candidates; offline dev
+  daily analysis  artifacts,     Competitor/        uses an injected double
+  snapshots)      ledger)        Pricing agents)    from backend/local/)
 ```
 
 All analysis is **on-demand**: nothing runs without a user request — no EventBridge rule, no Step Functions workflow, no schedulers. The identical handler runs locally (`backend/local/start.mjs`) with injected in-memory adapters, so offline behavior matches deployed behavior.
@@ -59,25 +61,35 @@ All analysis is **on-demand**: nothing runs without a user request — no EventB
 |---|---|
 | Amplify | Hosts the React SPA; environment variables set `VITE_API_MODE` / `VITE_API_BASE_URL`. |
 | API Gateway (HTTP API) | Public HTTPS entry point with CORS, routing every `/api/*` route to Lambda. |
-| Lambda | Runs the API, deterministic analysis, forecasting and the agent system; scales to zero; least-privilege IAM policy in `infrastructure/template.yaml`. |
+| Lambda | Runs the API, deterministic analysis, forecasting, the pricing workflow and the agent system; least-privilege IAM in `infrastructure/template.yaml`. |
 | DynamoDB | Single-table application state (products, sales, competitors, analysis snapshots). The `ANALYSIS#<date>` sort key makes same-day analysis idempotent. |
 | S3 | Versioned datasets and upload artifacts (raw/processed/exports prefixes); large payloads never stored in DynamoDB. |
-| Bedrock | Interpretation and synthesis only, inside the agent system. In development the mock client is the default — no AWS calls or credits. |
-| SageMaker (future) | `ForecastService` is isolated so a hosted model can replace the baseline without rewriting callers. |
+| Bedrock | Interpretation and synthesis only, inside the agent system. The deployed stack always calls the real runtime client (Claude 3 Haiku, token-billed); the offline dev server injects its own Bedrock double from `backend/local/`. |
+| SageMaker | XGBoost pricing model on the serverless endpoint `pricing-xgboost-endpoint`: seven candidate prices → predicted units → app-side revenue. The trend+seasonality baseline behind `ForecastService` stays deterministic and does not use it. |
 
 ## AI architecture
 
 - **Supervisor agent** — routes the seller's question, calls specialist agents, merges their structured findings and produces the grounded answer with confidence, data sources and suggested follow-ups.
 - **Market analyst agent** — demand trend and change, recent history, seasonality signals.
-- **Competitor analyst agent** — competitor prices, discounts, ratings and the seller's position vs the median.
-- **Pricing analyst agent** — interprets scenario outputs and forecast-based trade-offs.
+- **Competitor analyst agent** — competitor prices, discounts and the seller's position vs the median.
+- **Pricing analyst agent** — interprets XGBoost scenario outputs and forecast-based trade-offs; selects only from the seven evaluated candidate prices.
 - **Forecasting model** — NOT an agent and NOT an LLM: a deterministic trend + seasonality baseline producing expected/lower/upper per day, isolated behind `ForecastService`.
 
 Agents return structured JSON (findings + summary) and only interpret the deterministic analysis context passed to them — they never calculate numbers.
 
+## ML pricing pipeline (training/, inference/, preprocessing/)
+
+One dataset (M5), one model, one endpoint:
+
+1. `preprocessing/prepare_m5.py` — 3 years of M5 history, ~500 products, engineered features (lags, rolling averages, price change, events), chronological 70/15/15 split.
+2. `training/train_xgboost.py` — local dry-run first, then the SageMaker training artifact; test metrics MAE ≈ 4.34, RMSE ≈ 7.99.
+3. `inference/feature_engineering.py` + `price_simulator.py` — reference implementation mirrored by the Lambda pricing workflow (`backend/src/services/pricing/`): latest inference features from seller history + stored mappings → exactly 7 candidates (P−10% … P+5%) → one XGBoost invoke per candidate → `predicted_revenue = price × predicted_units` in app code → scenarios + competitor data to Bedrock → recommended price, hard-validated to be one of the 7.
+
+The model is never retrained on seller uploads; competitor data never reaches XGBoost (Bedrock context only). When data is insufficient the response says so explicitly (`missing_data`) rather than inventing values.
+
 ## Data flow
 
-On-demand only (implemented):
+On-demand only:
 
 ```text
 User opens a product / asks the AI Analyst / POST /analyze
@@ -88,81 +100,51 @@ User opens a product / asks the AI Analyst / POST /analyze
   → respond; same-day repeats return the cached snapshot (idempotent)
 ```
 
-Scheduled processing (EventBridge → Step Functions, §18) is deliberately **not** built: analysis runs only on request. That path remains a documented future extension requiring no changes to the existing handlers.
-
-## ML vs GenAI
-
-The LLM is never the source of truth for numbers. Prices, demand, forecasts, competitor statistics and percentages come from deterministic application code and the forecasting baseline, stored with the data. Bedrock (or its mock) only interprets, compares and explains, citing field names from the computed context. When data is insufficient, the response says so explicitly (`missing_data`) rather than inventing values.
-
 ## Failure handling
 
 - **Partial page load** — product pages read sales/competitors/forecast/analysis independently; a failed read marks that section unavailable and offers a reload without destroying the page.
 - **Forecast unavailable** — guarded inputs return 422 with reasons; the UI shows an amber "Forecast unavailable" notice while history and competitor analysis remain usable.
 - **Bedrock failure** — AI requests fail gracefully; all numeric analysis stays available on the dashboard.
-- **Duplicate/retried analysis** — `POST /analyze` is idempotent per product per day; a timed-out write may still have succeeded, and the next request returns the stored snapshot instead of duplicating it.
+- **Duplicate/retried analysis** — `POST /analyze` is idempotent per product per day; the next request returns the stored snapshot instead of duplicating it.
 - **Storage writes** — bounded retries (initial attempt + 5, full jitter) for unprocessed batch items; exhaustion surfaces structured counts, never silent data loss.
 - **API errors** — validation failures return explicit 400/404/422 with reasons; unexpected failures return a generic 500 without exposing AWS internals.
 
-## Current checkpoint
-
-Phase 5 (Bedrock multi-agent system) is implemented. The AI Analyst uses structured specialist agents (Market, Competitor, Pricing) with a Supervisor that routes questions and synthesizes grounded responses. All numbers come from deterministic analysis - the LLM only interprets. The Bedrock SDK is loaded lazily and the mock client is the default, so no AWS calls or credits are used unless explicitly configured.
-
-Phase 6 (on-demand analysis) is implemented: analysis runs only when the user requests it - there is NO scheduled trigger, EventBridge rule or Step Functions workflow. Snapshots are idempotent by `product_id + analysis_date`, so repeated same-day requests return the identical report.
-
-Phase 7 (polish, no AWS) is complete: responsive layout (mobile top bar with hamburger menu, desktop sidebar unchanged), an informative Settings status page (API mode, mock-Bedrock AI mode, on-demand analysis) and the demo script below. All offline deliverables from the spec are done; only Phase 8 (deploying to AWS) remains, planned in gitignored `aws.md`.
-
 ## Deployment
 
-Deployment uses AWS and can consume credits, so it is intentionally **not executed** during offline development. `infrastructure/template.yaml` (AWS SAM) is ready: HTTP API, DynamoDB table, versioned S3 bucket and a least-privilege Lambda wired to all nine routes. The step-by-step plan — prerequisites, build/deploy commands, the seeding decision, frontend wiring, post-deploy verification and teardown — lives in `aws.md`, which is deliberately gitignored and never committed.
+`infrastructure/template.yaml` (AWS SAM) defines the HTTP API, DynamoDB table, versioned S3 bucket and a least-privilege Lambda wired to all routes — product CRUD + subresources, simulate-price, analyze, pricing/recommend, ai/chat, upload + upload-outcome — with `sagemaker:InvokeEndpoint` scoped to the one endpoint and `bedrock:InvokeModel` scoped to Claude 3 Haiku. Deploy with `sam build && sam deploy --guided` (`samconfig.toml` is tracked). Frontend hosting: Amplify with `VITE_API_MODE=aws` and `VITE_API_BASE_URL` pointing at the deployed stage.
+
+⚠️ AWS usage is account-dependent and can consume credits even with a zero bill.
 
 ## Local start (PowerShell)
 
 Terminal 1:
 ```powershell
-node "C:\Users\harshiv\Desktop\Mercury\backend\local\start.mjs"
+node backend\local\start.mjs
 ```
 
 Terminal 2:
 ```powershell
 $env:VITE_API_MODE = "localhost"
 $env:VITE_API_BASE_URL = "http://127.0.0.1:3001"
-npm --prefix "C:\Users\harshiv\Desktop\Mercury\frontend" run dev -- --host 127.0.0.1 --port 5173 --strictPort
+npm --prefix frontend run dev -- --host 127.0.0.1 --port 5173 --strictPort
 ```
-Open http://127.0.0.1:5173. Local storage resets on backend restart. Uploads change sales/competitor observations for existing products; they do not create products.
+Open http://127.0.0.1:5173. The catalog starts empty: use "+ Add product" on the Products page, upload sales + competitor CSVs on the Data page, then open the product for analytics and the AI Analyst.
 
-## Local validation
+## Validation
 
 ```powershell
-npm --prefix "C:\Users\harshiv\Desktop\Mercury\backend" test
-npm --prefix "C:\Users\harshiv\Desktop\Mercury\frontend" test
-npm --prefix "C:\Users\harshiv\Desktop\Mercury\frontend" run lint
-npm --prefix "C:\Users\harshiv\Desktop\Mercury\frontend" run build
-npm --prefix "C:\Users\harshiv\Desktop\Mercury\frontend" run smoke
+npm --prefix frontend run lint
+npm --prefix frontend run build
+npm --prefix backend run check-shared
 ```
-For fresh dependency installation use `npm ci` in backend and frontend (npm downloads, not AWS calls). The deployable manifest/lockfile lives in backend/src. Do not seed, deploy, or select AWS mode during offline development.
+For fresh dependency installation use `npm ci` in backend, backend/src and frontend. The deployable manifest/lockfile lives in backend/src. Edit canonical shared math only in `shared/`, then run `node backend/scripts/sync-shared.mjs` to mirror it into `backend/src/shared/`.
 
-## Demo script (3–5 minutes)
+## Documentation
 
-Start the backend and frontend (see Local start), then walk through:
-
-1. **Dashboard** — `Products monitored` shows the 5 demo products and `Need attention` counts products whose deterministic recommendation is `attention`. Each card shows demand trend, 14-day forecast direction and price-vs-median badges.
-2. **Product detail (Wireless Earbuds)** — open the product from the dashboard: current price, demand history chart and the 14-day forecast with its uncertainty band. The UI labels these as estimates — never guaranteed future sales.
-3. **Competitor landscape** — the table lists ~5 competitors with price, discount, rating and percentage vs your price; the footer summarizes min/median/avg/max and the seller position. All computed by application code, not the LLM.
-4. **Pricing what-if simulator** — click `Run scenarios` to compare ±₹100 price points with expected daily demand, estimated revenue and competitor position. Deterministic estimates from recent demand — the seller makes the final decision.
-5. **On-demand analysis, no scheduler** — analysis is computed when a page opens (read-only) and persisted only via `POST /api/products/{id}/analyze`, keyed `product_id + analysis_date`: same-day repeats return the cached snapshot instead of recomputing. There is no EventBridge rule or Step Functions workflow.
-6. **Grounded AI output** — AI replies show a confidence badge, data sources and missing-data notes. Prices, demand, forecasts and competitor statistics come from deterministic code and the forecasting model; Bedrock only interprets them.
-7. **AI Analyst** — ask "Why should I investigate my current pricing?" and watch the agent stage indicator (Market → Competitor → Forecast → Pricing → Synthesis). The answer references the same metrics shown on the dashboard, not generic e-commerce knowledge.
-8. **Architecture** — walk through Amplify → API Gateway → Lambda → DynamoDB/S3 → Bedrock + forecasting, then the on-demand flow: user request → guarded compute → idempotent save → response. API contracts are documented in `docs/`.
-
-## Documentation (absolute workspace paths)
-
-- `C:\Users\harshiv\Desktop\Mercury\docs\phase2-local.md` — completion scope, checks and deferred integration gates
-- `C:\Users\harshiv\Desktop\Mercury\docs\frontend-local-http.md` — browser configuration and manual smoke checklist
-- `C:\Users\harshiv\Desktop\Mercury\docs\local-backend.md` — loopback server
-- `C:\Users\harshiv\Desktop\Mercury\docs\product-api.md` — product/pricing contracts
-- `C:\Users\harshiv\Desktop\Mercury\docs\analysis-api.md` — analysis snapshots
-- `C:\Users\harshiv\Desktop\Mercury\docs\ingestion-api.md` — upload stages and outcomes
-- `C:\Users\harshiv\Desktop\Mercury\docs\dynamodb-adapter.md` — keys, pagination and bounded retries
-
-AWS usage is account-dependent and can consume credits even with a zero bill. Existing S3/DynamoDB/log storage can accrue usage while local development proceeds. No cleanup or destructive commands are part of local validation.
-
+- `docs/product-api.md` — product/pricing contracts
+- `docs/analysis-api.md` — analysis snapshots
+- `docs/ingestion-api.md` — upload stages and outcomes
+- `docs/forecast-provider.md` — forecasting boundary and provider
+- `docs/local-backend.md` — loopback server
+- `docs/frontend-local-http.md` — browser configuration and manual checklist
+- `docs/dynamodb-adapter.md` — keys, pagination and bounded retries

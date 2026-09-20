@@ -2,7 +2,7 @@
 
 export function Card({ title, subtitle, children, className = '', actions = null }) {
   return (
-    <div className={`bg-white rounded-xl border border-slate-200 shadow-sm ${className}`}>
+    <div className={"bg-white rounded-xl border border-slate-200 shadow-sm " + className + ""}>
       {(title || actions) && (
         <div className="flex items-start justify-between px-5 pt-4 pb-2">
           <div>
@@ -14,63 +14,66 @@ export function Card({ title, subtitle, children, className = '', actions = null
       )}
       <div className={title ? 'px-5 pb-5' : 'p-5'}>{children}</div>
     </div>
-  )
+  );
 }
 
 export function StatTile({ label, value, hint, tone = 'default' }) {
   const tones = {
-    default: 'text-slate-900',
-    good: 'text-emerald-600',
-    warn: 'text-amber-600',
-    bad: 'text-rose-600',
-  }
+    default: "text-slate-900",
+    good: "text-emerald-600",
+    warn: "text-amber-600",
+    bad: "text-rose-600",
+  };
   return (
     <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-5">
       <div className="text-xs font-medium text-slate-500 uppercase tracking-wide">{label}</div>
-      <div className={`text-2xl font-semibold mt-1 ${tones[tone]}`}>{value}</div>
+      <div className={"text-2xl font-semibold mt-1 " + tones[tone] + ""}>{value}</div>
       {hint && <div className="text-xs text-slate-400 mt-1">{hint}</div>}
     </div>
-  )
+  );
 }
 
 const BADGE_STYLES = {
-  neutral: 'bg-slate-100 text-slate-700 ring-slate-200',
-  good: 'bg-emerald-50 text-emerald-700 ring-emerald-200',
-  warn: 'bg-amber-50 text-amber-700 ring-amber-200',
-  bad: 'bg-rose-50 text-rose-700 ring-rose-200',
-  info: 'bg-indigo-50 text-indigo-700 ring-indigo-200',
-}
+  neutral: "bg-slate-100 text-slate-700 ring-slate-200",
+  good: "bg-emerald-50 text-emerald-700 ring-emerald-200",
+  warn: "bg-amber-50 text-amber-700 ring-amber-200",
+  bad: "bg-rose-50 text-rose-700 ring-rose-200",
+  info: "bg-indigo-50 text-indigo-700 ring-indigo-200",
+};
 
-export function Badge({ tone = 'neutral', children }) {
+export function Badge({ tone = "neutral", children }) {
   return (
     <span
-      className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ring-1 ring-inset ${BADGE_STYLES[tone]}`}
+      className={"inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ring-1 ring-inset " + BADGE_STYLES[tone] + ""}
     >
       {children}
     </span>
-  )
+  );
 }
 
 export function TrendBadge({ direction, changePct }) {
-  if (direction === 'insufficient_data') return <Badge>insufficient data</Badge>
+  if (direction === "insufficient_data") return <Badge>insufficient data</Badge>;
   const map = {
-    increasing: { tone: 'good', arrow: '▲' },
-    decreasing: { tone: 'bad', arrow: '▼' },
-    stable: { tone: 'neutral', arrow: '▬' },
-  }
-  const { tone, arrow } = map[direction] || map.stable
+    increasing: { tone: "good", arrow: "▲" },
+    decreasing: { tone: "bad", arrow: "▼" },
+    stable: { tone: "neutral", arrow: "▬" },
+  };
+  const { tone, arrow } = map[direction] || map.stable;
+  const signed = changePct != null
+    ? (changePct > 0 ? "+" : "") + (Math.round(changePct * 10) / 10) + "%"
+    : null;
   return (
     <Badge tone={tone}>
-      {arrow} {direction} {changePct != null && `(${changePct > 0 ? '+' : ''}${changePct}%)`}
+      {arrow} {direction} {signed}
     </Badge>
-  )
+  );
 }
 
-export function Skeleton({ className = '' }) {
-  return <div className={`animate-pulse bg-slate-200 rounded ${className}`} />
+export function Skeleton({ className = "" }) {
+  return <div className={"animate-pulse bg-slate-200 rounded " + className + ""} />;
 }
 
-export function LoadingState({ label = 'Loading…' }) {
+export function LoadingState({ label = "Loading…" }) {
   return (
     <div className="space-y-3 p-5">
       <Skeleton className="h-6 w-1/3" />
@@ -78,7 +81,7 @@ export function LoadingState({ label = 'Loading…' }) {
       <Skeleton className="h-40 w-full" />
       <span className="text-xs text-slate-400">{label}</span>
     </div>
-  )
+  );
 }
 
 export function ErrorState({ message, onRetry }) {
@@ -95,7 +98,7 @@ export function ErrorState({ message, onRetry }) {
         </button>
       )}
     </div>
-  )
+  );
 }
 
 export function EmptyState({ title, message, action }) {
@@ -105,5 +108,29 @@ export function EmptyState({ title, message, action }) {
       <p className="text-sm text-slate-500 mt-1 max-w-md mx-auto">{message}</p>
       {action}
     </div>
-  )
+  );
+}
+
+export function Alert({ variant = "rose", children, action }) {
+  const variants = {
+    rose: "bg-rose-50 text-rose-700 ring-rose-200",
+    amber: "bg-amber-50 text-amber-700 ring-amber-200",
+    emerald: "bg-emerald-50 text-emerald-700 ring-emerald-200",
+    indigo: "bg-indigo-50 text-indigo-700 ring-indigo-200",
+    slate: "bg-slate-100 text-slate-700 ring-slate-200",
+  };
+  return (
+    <div
+      className={"border border-t-4 ring-1 ring-inset rounded-xl p-4 " + variants[variant] + ""}
+      role="alert"
+    >
+      <div className="flex items-start gap-3">
+        <span className="mt-0.5 flex-shrink-0">
+          {variant === "rose" ? "⚠" : variant === "amber" ? "ⓘ" : variant === "emerald" ? "✓" : "▶"}
+        </span>
+        <div className="flex-1 text-sm">{children}</div>
+        {action}
+      </div>
+    </div>
+  );
 }

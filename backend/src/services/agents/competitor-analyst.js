@@ -8,7 +8,7 @@ import { createBedrockClient } from '../bedrock-client.js';
 
 export class CompetitorAnalyst {
   constructor(bedrockClient = null) {
-    this.bedrock = bedrockClient || createBedrockClient({ mock: true });
+    this.bedrock = bedrockClient || createBedrockClient();
   }
 
   /**
@@ -30,8 +30,8 @@ export class CompetitorAnalyst {
 
     const bedrockResponse = await this.bedrock.converse(agentInput);
     
-    // Parse the response - MockBedrockClient returns { output: { message: { content: [{ text: JSON.stringify(result) }] } } }
-    // ProductionBedrockClient returns the parsed result directly
+    // Parse the response - the runtime client returns the parsed result directly
+    // (older mock doubles wrapped it as output.message.content[0].text JSON).
     let result;
     if (bedrockResponse.output?.message?.content?.[0]?.text) {
       result = JSON.parse(bedrockResponse.output.message.content[0].text);

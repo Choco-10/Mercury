@@ -7,15 +7,16 @@ const ORIGINS = new Set(['http://localhost:5173', 'http://127.0.0.1:5173'])
 const MAX_BODY_BYTES = 2 * 1024 * 1024
 
 // No production handler import/call, environment-selected adapters, or cloud fallback.
-export function createLocalServer(dataset) {
-  const store = createMemoryStore(dataset)
+export function createLocalServer(dataset, options = {}) {
+  const externalStore = options.store ?? null
+  const store = externalStore ?? createMemoryStore(dataset)
   const storage = createMemoryUploadStorage()
-  const route = createHandler(store, storage)
+  const route = createHandler(store, { ...storage, ...(options.pricing ? { pricing: options.pricing } : {}) })
   const server = createServer(async (req, res) => {
     const origin = req.headers.origin
     const cors = origin && ORIGINS.has(origin) ? {
       'Access-Control-Allow-Origin': origin,
-      'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+      'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
       'Access-Control-Allow-Headers': 'Content-Type',
     } : {}
     function reply(status, body) {
@@ -34,8 +35,9 @@ export function createLocalServer(dataset) {
       if (origin && !ORIGINS.has(origin)) return error(403, 'Development origin is not allowed')
       if (!req.url.startsWith('/api/') || req.url.includes('#')) return error(404, 'No local API route')
       if (req.method === 'OPTIONS') return reply(204, '')
-      if (!['GET', 'POST'].includes(req.method)) return error(404, 'No local API route')
-      if (req.method === 'POST' && req.headers['content-type']?.split(';')[0].trim().toLowerCase() !== 'application/json') {
+      if (!['GET', 'POST', 'PUT', 'DELETE'].includes(req.method)) return error(404, 'No local API route')
+      // DELETE carries no body, so it has no content type to check.
+      if (['POST', 'PUT'].includes(req.method) && req.headers['content-type']?.split(';')[0].trim().toLowerCase() !== 'application/json') {
         return error(415, 'Use Content-Type: application/json')
       }
       if (Number(req.headers['content-length']) > MAX_BODY_BYTES) return error(413, 'Request exceeds 2 MiB limit')

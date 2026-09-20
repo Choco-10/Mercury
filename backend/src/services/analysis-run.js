@@ -51,7 +51,7 @@ export function validateAnalysisInputs(product, sales, competitors) {
   if (!Array.isArray(competitors) || competitors.length === 0) {
     issues.push('At least one competitor observation is required')
   } else if (competitors.some((row) => !row ||
-      !Number.isFinite(row.price) || row.price <= 0 ||
+      !Number.isFinite(row.competitor_price) || row.competitor_price <= 0 ||
       (row.product_id != null && row.product_id !== product.product_id))) {
     issues.push('Competitor prices must be finite and positive, with matching product IDs')
   }

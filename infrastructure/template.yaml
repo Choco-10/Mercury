@@ -42,12 +42,15 @@ Resources:
       Handler: handlers/api.handler
       CodeUri: ../backend/src
       Runtime: nodejs22.x
-      Timeout: 30
+      Timeout: 120
       MemorySize: 512
       Environment:
         Variables:
           TABLE_NAME: !Ref DataTable
           BUCKET_NAME: !Ref DataBucket
+          S3_BUCKET: pricing-ai-780891107631
+          SAGEMAKER_ENDPOINT_NAME: pricing-xgboost-endpoint
+          BEDROCK_MODEL_ID: apac.amazon.nova-lite-v1:0
       Policies:
         - Version: '2012-10-17'
           Statement:
@@ -56,6 +59,7 @@ Resources:
                 - dynamodb:Query
                 - dynamodb:GetItem
                 - dynamodb:PutItem
+                - dynamodb:DeleteItem
                 - dynamodb:BatchWriteItem
               Resource: !GetAtt DataTable.Arn
             - Effect: Allow
@@ -66,6 +70,21 @@ Resources:
               Resource:
                 - !GetAtt DataBucket.Arn
                 - !Sub '${DataBucket.Arn}/*'
+            - Effect: Allow
+              Action:
+                - s3:GetObject
+                - s3:PutObject
+              Resource: 'arn:aws:s3:::pricing-ai-780891107631/pricing-ai/*'
+            - Effect: Allow
+              Action:
+                - sagemaker:InvokeEndpoint
+              Resource: 'arn:aws:sagemaker:ap-south-1:780891107631:endpoint/pricing-xgboost-endpoint'
+            - Effect: Allow
+              Action:
+                - bedrock:InvokeModel
+              Resource:
+                - !Sub 'arn:aws:bedrock:${AWS::Region}:${AWS::AccountId}:inference-profile/*'
+                - 'arn:aws:bedrock:*::foundation-model/*'
       Events:
         GetProducts:
           Type: HttpApi
@@ -73,6 +92,24 @@ Resources:
             ApiId: !Ref HttpApi
             Path: /api/products
             Method: GET
+        PostCreateProduct:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /api/products
+            Method: POST
+        PutProduct:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /api/products/{id}
+            Method: PUT
+        DeleteProduct:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /api/products/{id}
+            Method: DELETE
         GetProduct:
           Type: HttpApi
           Properties:
@@ -96,6 +133,12 @@ Resources:
           Properties:
             ApiId: !Ref HttpApi
             Path: /api/products/{id}/analyze
+            Method: POST
+        PostRecommend:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /api/pricing/recommend
             Method: POST
         PostChat:
           Type: HttpApi

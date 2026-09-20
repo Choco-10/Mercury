@@ -1,7 +1,32 @@
 ﻿prompt.md
-node_modules/
-dist/
-.env
-.aws-sam/
-__pycache__/
 aws.md
+AGENTS.md
+deploy-state.md
+
+# dependencies
+node_modules/
+
+# builds / artifacts
+dist/
+build/
+.aws-sam/
+
+# env & secrets
+.env
+.env.*
+
+# python
+__pycache__/
+*.pyc
+.venv/
+venv/
+.pytest_cache/
+
+# local datasets (raw M5 is ~370 MB)
+data/
+
+# OS / editor junk
+.DS_Store
+Thumbs.db
+*.log
+coverage/

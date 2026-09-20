@@ -7,7 +7,6 @@ const NAV_ITEMS = [
   { to: '/products', label: 'Products' },
   { to: '/analyst', label: 'AI Analyst' },
   { to: '/data', label: 'Data' },
-  { to: '/settings', label: 'Settings' },
 ]
 
 const NAV_LINK_CLASS = ({ isActive }) =>
@@ -30,13 +29,14 @@ function Brand() {
 }
 
 function ApiModeBadge() {
-  const isAws = API_MODE === 'aws'
+    const isAws = API_MODE === 'aws'
   return (
     <span className={`inline-flex items-center gap-1.5 ${isAws ? 'text-emerald-400' : 'text-amber-400'}`}>
       <span className={`w-2 h-2 rounded-full ${isAws ? 'bg-emerald-400' : 'bg-amber-400'}`} />
-      {isAws ? 'AWS API mode' : 'Local demo mode'}
+      {isAws ? 'AWS API mode' : 'Local backend mode'}
     </span>
   )
+
 }
 
 export default function Layout() {

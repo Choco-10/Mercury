@@ -18,6 +18,20 @@ const AGENT_STAGES = [
   { id: 'synthesis', label: 'AI synthesis' },
 ]
 
+/** Keep only relevant, non-duplicate follow-up questions. */
+function cleanFollowUps(raw) {
+  if (!Array.isArray(raw)) return []
+  const seen = new Set()
+  return raw.filter((q) => {
+    if (typeof q !== 'string' || !q.trim()) return false
+    if (/upload|csv|data source/i.test(q)) return false
+    const key = q.trim().toLowerCase()
+    if (seen.has(key)) return false
+    seen.add(key)
+    return true
+  })
+}
+
 export default function AIAnalyst() {
   const [products, setProducts] = useState([])
   const [productId, setProductId] = useState('')
@@ -48,10 +62,9 @@ export default function AIAnalyst() {
         role: 'analyst',
         text: res.answer ?? res.response,
         agents: res.agents_used ?? res.analysis_stages?.map((s) => s.stage),
-        confidence: res.confidence,
-        dataSources: res.data_sources,
-        missingData: res.missing_data,
-        followUps: res.suggested_follow_up,
+        dataSources: [],
+        missingData: Array.isArray(res.missing_data) ? res.missing_data : [],
+        followUps: cleanFollowUps(res.suggested_follow_up),
       }])
     } catch (e) {
       clearInterval(timer)
@@ -67,7 +80,7 @@ export default function AIAnalyst() {
       <header>
         <h1 className="text-xl font-semibold text-slate-900">AI Analyst</h1>
         <p className="text-sm text-slate-500 mt-0.5">
-          Grounded in your actual product data — the AI reasons over computed metrics, it does not invent numbers.
+          Grounded in your actual product data. The AI reasons over computed metrics, it does not invent numbers.
         </p>
       </header>
 
@@ -96,16 +109,9 @@ export default function AIAnalyst() {
             <div key={i} className={m.role === 'user' ? 'flex justify-end' : 'flex justify-start'}>
               <div className={`max-w-[80%] rounded-xl px-4 py-3 text-sm whitespace-pre-line ${m.role === 'user' ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-800'}`}>
                 {m.text}
-                {m.role === 'analyst' && (m.agents?.length > 0 || m.confidence) && (
+                {m.role === 'analyst' && m.agents?.length > 0 && (
                   <div className="mt-2 flex flex-wrap gap-1.5">
-                    {m.agents?.map((a) => <Badge key={a} tone="info">{String(a).replace(/_/g, ' ')}</Badge>)}
-                    {m.confidence && <Badge tone={m.confidence === 'high' ? 'good' : m.confidence === 'low' ? 'warn' : 'neutral'}>confidence: {m.confidence}</Badge>}
-                    <Badge tone="neutral">grounded on computed metrics</Badge>
-                  </div>
-                )}
-                {m.role === 'analyst' && m.dataSources?.length > 0 && (
-                  <div className="mt-2 text-xs text-slate-500">
-                    Sources: {m.dataSources.join(', ')}
+                    {m.agents.map((a) => <Badge key={a} tone="info">{String(a).replace(/_/g, ' ')}</Badge>)}
                   </div>
                 )}
                 {m.role === 'analyst' && m.missingData?.length > 0 && (

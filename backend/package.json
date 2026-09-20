@@ -4,19 +4,18 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "test": "node scripts/test.mjs",
     "sync-shared": "node scripts/sync-shared.mjs",
-    "check-shared": "node scripts/sync-shared.mjs --check",
-    "verify-package": "node scripts/verify-package.mjs"
+    "check-shared": "node scripts/sync-shared.mjs --check"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "type": "module",
   "dependencies": {
-    "@aws-sdk/client-bedrock-runtime": "^3.0.0",
+    "@aws-sdk/client-bedrock-runtime": "^3.1134.0",
     "@aws-sdk/client-dynamodb": "^3.1134.0",
     "@aws-sdk/client-s3": "^3.1134.0",
+    "@aws-sdk/client-sagemaker-runtime": "^3.1134.0",
     "@aws-sdk/lib-dynamodb": "^3.1134.0"
   }
 }

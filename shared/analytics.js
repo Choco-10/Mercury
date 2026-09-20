@@ -1,21 +1,7 @@
 /**
- * Shared deterministic analytics used by both the frontend demo mode
- * and the backend Lambda services. NO LLM involvement in this module.
+ * Shared deterministic analytics used by the backend Lambda services and the
+ * local backend they share code with. NO LLM involvement in this module.
  */
-
-/**
- * Deterministic PRNG (mulberry32) so demo data is stable across reloads.
- */
-export function mulberry32(seed) {
-  let a = seed >>> 0
-  return function () {
-    a |= 0
-    a = (a + 0x6d2b79f5) | 0
-    let t = Math.imul(a ^ (a >>> 15), 1 | a)
-    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) | 0
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296
-  }
-}
 
 /**
  * Linear trend slope of series over its index (units per day).

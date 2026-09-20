@@ -89,7 +89,7 @@ Fake providers exist only in tests; they are not models. Tests exercise awaiting
 immutable requests, zero results, invalid outputs, sanitized failures, date windows,
 staleness, reproducibility, packaging and unchanged consumer regressions.
 
-Existing endpoint, browser demo, analysis and upload consumers still use the old
+Existing endpoint, analysis and upload consumers still use the old
 baseline; they DO NOT yet use this service. No model accuracy, interval coverage,
 end-to-end graceful analysis degradation or browser acceptance is established.
 

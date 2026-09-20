@@ -1,8 +1,8 @@
 import { CsvError, csvRecords } from './csv-records.js'
 
 export const CSV_COLUMNS = {
-  sales: ['date', 'product_id', 'units_sold', 'price'],
-  competitors: ['observation_date', 'product_id', 'competitor_id', 'title', 'price', 'rating', 'discount'],
+  sales: ['date', 'product_id', 'price', 'units_sold', 'discount'],
+  competitors: ['date', 'competitor_id', 'product_id', 'competitor_product_id', 'competitor_price', 'competitor_discount'],
 }
 export const MAX_ISSUES = 50
 const idPattern = /^[A-Za-z0-9_-]{1,64}$/
@@ -41,10 +41,12 @@ export function normalizeCsv(text, type) {
     const issue = (message) => rowIssues.push(`Record ${i + 1}: ${message}`)
     if (cells.length !== header.length) issue('field count does not match header')
     const record = Object.fromEntries(header.map((name, j) => [name, cells[j] || '']))
-    const dateKey = type === 'sales' ? 'date' : 'observation_date'
+    const dateKey = 'date'
     if (!validDate(record[dateKey])) issue(`${dateKey} must be a real YYYY-MM-DD date`)
     if (!idPattern.test(record.product_id)) issue('invalid product_id (1–64 letters, digits, underscore or hyphen)')
-    const numeric = type === 'sales' ? ['units_sold', 'price'] : ['price', 'rating', 'discount']
+    const numeric = type === 'sales'
+      ? ['price', 'units_sold', 'discount']
+      : ['competitor_price', 'competitor_discount']
     const values = {}
     for (const name of numeric) {
       const value = Number(record[name])
@@ -52,15 +54,13 @@ export function normalizeCsv(text, type) {
       if (!decimalPattern.test(record[name]) || !Number.isFinite(value) || value > Number.MAX_SAFE_INTEGER) {
         issue(`${name} must be a finite nonnegative decimal within the safe numeric range`)
       } else if (name === 'units_sold' && !Number.isSafeInteger(value)) issue('units_sold must be an integer')
+      else if (name.endsWith('_price') && value <= 0) issue(`${name} must be positive`)
       else if (name === 'price' && value <= 0) issue('price must be positive')
-      else if (name === 'rating' && value > 5) issue('rating must be between 0 and 5')
-      else if (name === 'discount' && value > 100) issue('discount must be between 0 and 100')
+      else if (name.endsWith('_discount') && value > 100) issue(`${name} must be between 0 and 100`)
     }
     if (type === 'competitors') {
       if (!idPattern.test(record.competitor_id)) issue('invalid competitor_id')
-      if (!record.title || record.title.length > 500 || /[\u0000-\u0008\u000B\u000C\u000E-\u001F]/.test(record.title)) {
-        issue('title must contain 1–500 characters without unsupported control characters')
-      }
+      if (!idPattern.test(record.competitor_product_id)) issue('invalid competitor_product_id')
     }
     const key = JSON.stringify([record.product_id, record[dateKey], ...(type === 'competitors' ? [record.competitor_id] : [])])
     if (keys.has(key)) issue('duplicate natural key within this file')
@@ -69,8 +69,8 @@ export function normalizeCsv(text, type) {
     if (issues.length >= MAX_ISSUES) break
     if (!rowIssues.length) rows.push(type === 'sales'
       ? { date: record.date, product_id: record.product_id, ...values }
-      : { observation_date: record.observation_date, product_id: record.product_id,
-        competitor_id: record.competitor_id, title: record.title, ...values })
+      : { date: record.date, product_id: record.product_id, competitor_id: record.competitor_id,
+        competitor_product_id: record.competitor_product_id, ...values })
   }
   if (issues.length) throw new CsvError('CSV validation failed (up to 50 issues shown)', 422, issues)
   return rows
