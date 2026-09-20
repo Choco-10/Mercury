@@ -72,7 +72,7 @@ One dataset, one model, one endpoint. The model is never retrained on seller upl
 
 1. `preprocessing/prepare_m5.py` builds the training data from the M5 dataset: three years of history, around 500 products, engineered features (rolling averages, price change, day of week, month, event flags) and a chronological train/validation/test split.
 2. `training/train_xgboost.py` trains the XGBoost regressor, evaluates it and publishes the artifact to S3.
-3. `inference/feature_engineering.py` and `price_simulator.py` are the reference implementations of what the Lambda does at request time: compute the latest inference features from the seller history, generate exactly seven candidate prices (current price, minus 10/7.5/5/2.5 percent and plus 2.5/5/10 percent), invoke the endpoint once per candidate and compute `price x predicted_units` in application code.
+3. `inference/feature_engineering.py` and `price_simulator.py` are the reference implementations of what the Lambda does at request time: compute the latest inference features from the seller history, generate exactly seven candidate prices (the current price plus or minus 10, 7.5, 5 and 2.5 percent, plus 2.5 and 5 percent), invoke the endpoint once per candidate and compute `price x predicted_units` in application code.
 4. The Lambda workflow in `backend/src/services/pricing/` runs the same steps and adds the Bedrock agent review, with hard validation that the recommended price is one of the seven candidates.
 
 ## Data flow
