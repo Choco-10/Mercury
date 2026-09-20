@@ -1,0 +1,19 @@
+version: 1
+# Amplify Console build spec for the Mercury frontend.
+# Place this file in frontend/ and point Amplify at the frontend/ directory
+# when connecting the repository. Vite outputs to dist/.
+frontend:
+  phases:
+    preBuild:
+      commands:
+        - npm ci
+    build:
+      commands:
+        - npm run build
+  artifacts:
+    baseDirectory: dist
+    files:
+      - '**/*'
+  cache:
+    paths:
+      - 'node_modules/**/*'
