@@ -7,7 +7,7 @@ import {
 import * as api from '../services/api.js'
 import { loadProductView } from '../services/views.js'
 const { simulatePrice } = api
-import { formatINR, formatPct, formatDate, formatUnits, floorUnits } from '../lib/format.js'
+import { formatINR, formatPct, formatDate, formatUnits, floorUnits, floorRevenue } from '../lib/format.js'
 import { Card, Badge, TrendBadge, LoadingState, ErrorState } from '../components/ui.jsx'
 
 export default function ProductDetail() {
@@ -315,7 +315,7 @@ function ProductView({ id }) {
               <BarChart
                 data={scenario.candidates.map((s) => ({
                   name: formatINR(s.price),
-                  revenue: Math.floor(s.predicted_revenue),
+                  revenue: floorRevenue(s.predicted_revenue),
                   demand: floorUnits(s.predicted_units),
                 }))}
               >

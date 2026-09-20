@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
-import { API_MODE, fetchProducts, uploadCsv } from '../services/api.js'
+import { fetchProducts, uploadCsv } from '../services/api.js'
 import { UploadOutcome } from '../components/UploadOutcome.jsx'
-import { Card, Badge } from '../components/ui.jsx'
+import { Card } from '../components/ui.jsx'
 
 /**
  * CSV schemas enforced by backend ingestion:
@@ -79,15 +79,6 @@ export default function DataPage() {
         <p className="text-sm text-slate-500 mt-0.5">Upload your sales and competitor data for on-demand analysis.</p>
       </header>
 
-      <Card title="Data source">
-        <Badge tone={API_MODE === 'aws' ? 'warn' : 'info'}>{API_MODE}</Badge>
-        <p className="text-sm text-slate-600 mt-3">
-          {API_MODE === 'localhost'
-            ? 'Local HTTP backend. Data, artifacts and upload outcomes reset on backend restart. No AWS fallback.'
-            : 'AWS HTTP backend selected. API, storage, compute and log usage can consume credits.'}
-        </p>
-        <p className="text-xs text-slate-500 mt-2">Maximum 256 KiB / 2,000 records. Duplicate keys within a file are rejected; existing dataset keys are replaced. All rows are validated on the backend before writes.</p>
-      </Card>
       <div className="grid md:grid-cols-2 gap-4">
         <Card title="Sales CSV" subtitle="Columns: date, product_id, price, units_sold, discount">
           <div className="space-y-3">

@@ -2,6 +2,8 @@
 
 Mercury is a decision support web app for Amazon sellers. For every product in the catalog it answers one question: what should I do with this product right now? It computes the evidence from the seller's own data, explains it, and the seller makes the final call. It never changes prices or places orders on its own.
 
+**Live demo:** <https://main.d1hc3m1a6gllmo.amplifyapp.com/>
+
 ## Who it is for
 
 Individual sellers or small teams selling on Amazon who upload their own sales history and competitor prices, and want evidence based pricing and demand guidance without handing control to an automatic repricer.
@@ -18,7 +20,7 @@ Individual sellers or small teams selling on Amazon who upload their own sales h
 
 ## Architecture
 
-The frontend is a React SPA hosted on Amplify. It talks over HTTPS to an API Gateway HTTP API that routes every `/api/*` path to one Lambda function. Behind the Lambda:
+The frontend is a React SPA (Vite + React 19 + Tailwind) hosted on [AWS Amplify](https://main.d1hc3m1a6gllmo.amplifyapp.com/) at `https://main.d1hc3m1a6gllmo.amplifyapp.com/`. It talks over HTTPS to an API Gateway HTTP API that routes every `/api/*` path to one Lambda function. Behind the Lambda:
 
 ```text
                      Amazon Amplify

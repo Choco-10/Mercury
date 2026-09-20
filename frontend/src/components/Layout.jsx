@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { NavLink, Outlet } from 'react-router-dom'
-import { API_MODE } from '../services/api.js'
+
 
 const NAV_ITEMS = [
   { to: '/', label: 'Dashboard', end: true },
@@ -28,16 +28,6 @@ function Brand() {
   )
 }
 
-function ApiModeBadge() {
-    const isAws = API_MODE === 'aws'
-  return (
-    <span className={`inline-flex items-center gap-1.5 ${isAws ? 'text-emerald-400' : 'text-amber-400'}`}>
-      <span className={`w-2 h-2 rounded-full ${isAws ? 'bg-emerald-400' : 'bg-amber-400'}`} />
-      {isAws ? 'AWS API mode' : 'Local backend mode'}
-    </span>
-  )
-
-}
 
 export default function Layout() {
   const [menuOpen, setMenuOpen] = useState(false)
@@ -76,9 +66,7 @@ export default function Layout() {
                 {item.label}
               </NavLink>
             ))}
-            <div className="px-3 py-2 text-xs">
-              <ApiModeBadge />
-            </div>
+            
           </nav>
         )}
       </header>
@@ -95,9 +83,7 @@ export default function Layout() {
             </NavLink>
           ))}
         </nav>
-        <div className="px-5 py-4 border-t border-slate-800 text-xs text-slate-500">
-          <ApiModeBadge />
-        </div>
+      
       </aside>
 
       <main className="flex-1 min-w-0 overflow-x-hidden">

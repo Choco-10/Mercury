@@ -7,7 +7,7 @@ export function formatINR(value, opts = {}) {
     currency: 'INR',
     maximumFractionDigits: 0,
     ...opts,
-  }).format(value)
+  }).format(Math.floor(value))
 }
 
 /** Units are always whole; predictions are rounded down (never oversell). */
@@ -15,6 +15,14 @@ export function formatUnits(value) {
   if (value == null || isNaN(value)) return '-'
   return new Intl.NumberFormat('en-IN').format(Math.floor(value))
 }
+
+/** Revenue is floored to a whole number so the table, chart bar and chart
+ * tooltip always agree. Computed here (one place) and reused everywhere. */
+export function floorRevenue(value) {
+  if (value == null || isNaN(value)) return 0
+  return Math.floor(value)
+}
+
 
 export function floorUnits(value) {
   if (value == null || isNaN(value)) return 0
